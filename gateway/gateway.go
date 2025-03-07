@@ -63,14 +63,15 @@ func NewServer(cfg *config.Config, serverType string) Server {
 }
 
 func (g *Gateway) Start() {
-	g.RPC_Server.Start(&g.RPC_Server)
-	g.GRPC_Server.Start(&g.GRPC_Server)
-	g.API_Server.Start(&g.API_Server)
-	g.JSON_RPC_Server.Start(&g.JSON_RPC_Server)
-	g.JSON_RPC_WS_Server.Start(&g.JSON_RPC_WS_Server)
+	go g.RPC_Server.Start(&g.RPC_Server)
+	go g.GRPC_Server.Start(&g.GRPC_Server)
+	go g.API_Server.Start(&g.API_Server)
+	go g.JSON_RPC_Server.Start(&g.JSON_RPC_Server)
+	go g.JSON_RPC_WS_Server.Start(&g.JSON_RPC_WS_Server)
 
 	select {}
 }
+
 
 func (g *Gateway) Shutdown() {
 	g.RPC_Server.Shutdown(&g.RPC_Server)

@@ -12,14 +12,20 @@ import (
 )
 
 func Start_RPC_Server(server *Server) {
-	fmt.Printf("Starting server on port %d\n", server.Port)
-	http.HandleFunc("/", server.handleRequest)
-	err := http.ListenAndServe(fmt.Sprintf(":%d", server.Port), nil)
-	if err != nil {
-		fmt.Printf("Error starting server: %v\n", err)
+	fmt.Printf("Starting RPC server on port %d\n", server.Port)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", server.handleRequest)
+
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%d", server.Port),
+		Handler: mux,
+	}
+
+	if err := srv.ListenAndServe(); err != nil {
+		fmt.Printf("Error starting RPC server: %v\n", err)
 	}
 }
-
 func Shutdown_RPC_Server(server *Server) {
 	fmt.Println("Shutting down server")
 	os.Exit(0)
