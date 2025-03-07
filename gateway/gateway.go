@@ -9,7 +9,6 @@ import (
 
 type Server struct {
 	Port uint16
-	Nodes []string
 	
 	Start func(server *Server)
 	Shutdown func(server *Server)
@@ -38,37 +37,22 @@ func NewServer(cfg *config.Config, serverType string) Server {
 	switch serverType {
 	case "rpc":
 		new_server.Port = cfg.Ports.RPC
-		for _, node := range cfg.Upstream {
-			new_server.Nodes = append(new_server.Nodes, node.RPC)
-		}
 		new_server.Start = Start_RPC_Server
 		new_server.Shutdown = Shutdown_RPC_Server
 	case "grpc":
 		new_server.Port = cfg.Ports.GRPC
-		for _, node := range cfg.Upstream {
-			new_server.Nodes = append(new_server.Nodes, node.GRPC)
-		}
 		new_server.Start = Start_GRPC_Server
 		new_server.Shutdown = Shutdown_GRPC_Server
 	case "api":
 		new_server.Port = cfg.Ports.API
-		for _, node := range cfg.Upstream {
-			new_server.Nodes = append(new_server.Nodes, node.API)
-		}
 		new_server.Start = Start_API_Server
 		new_server.Shutdown = Shutdown_API_Server
 	case "jsonrpc":
 		new_server.Port = cfg.Ports.JSONRPC
-		for _, node := range cfg.Upstream {
-			new_server.Nodes = append(new_server.Nodes, node.JSONRPC)
-		}
 		new_server.Start = Start_JSON_RPC_Server
 		new_server.Shutdown = Shutdown_JSON_RPC_Server
 	case "jsonrpc_ws":
 		new_server.Port = cfg.Ports.JSONRPC_WS
-		for _, node := range cfg.Upstream {
-			new_server.Nodes = append(new_server.Nodes, node.JSONRPC_WS)
-		}
 		new_server.Start = Start_JSONRPC_WS_Server
 		new_server.Shutdown = Shutdown_JSONRPC_WS_Server
 	default:
