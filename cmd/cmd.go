@@ -5,7 +5,7 @@ import (
 	"os"
 	
 	"github.com/decentrio/gateway/config"
-	// "github.com/decentrio/gateway/gateway"
+	"github.com/decentrio/gateway/gateway"
 	"github.com/spf13/cobra"
 )
 
@@ -41,7 +41,13 @@ var startCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("Starting gateway with config file: %s\n", configFile)
-
+		gw, err := gateway.NewGateway(config.GetConfig())
+		if err != nil {
+			fmt.Printf("Error creating gateway: %v\n", err)
+			os.Exit(1)
+		}
+		
+		gw.Start()
 	},
 }
 
