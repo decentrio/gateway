@@ -1,90 +1,81 @@
-// package gateway
-
-// import (
-// 	"fmt"
-// 	// "net/http"
-// 	"os"
-
-// 	// "google.golang.org/grpc"
-// 	// "github.com/decentrio/gateway/config"
-// )
-
-// func Start_GRPC_Server(server *Server) {
-// 	fmt.Printf("Starting server on port %d\n", server.Port)
-// 	// http.HandleFunc("/", server.handleRequest)
-// 	// http.HandleFunc("/",
-// 	// 	func(w http.ResponseWriter, r *http.Request) {
-// 	// 		fmt.Fprintf(w, "Hello, you've requested: %s\n", r.URL.Path)
-// 	// 	})
-// 	// err := http.ListenAndServe(fmt.Sprintf(":%d", server.Port), nil)
-// 	// if err != nil {
-// 	// 	fmt.Printf("Error starting server: %v\n", err)
-// 	// }
-// }
-
-// func Shutdown_GRPC_Server(server *Server) {
-// 	fmt.Println("Shutting down server")
-// 	os.Exit(0)
-// }
-
 package gateway
 
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 
 	"github.com/decentrio/gateway/config"
 	pb "github.com/decentrio/gateway/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
-
-// GRPCServer struct
 
 type GRPCServer struct {
 	pb.UnimplementedGatewayServiceServer
 }
 
-// Start_GRPC_Server starts the gRPC server
 func Start_GRPC_Server(server *Server) {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", server.Port))
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", server.Port))
 	if err != nil {
-		fmt.Printf("Failed to listen: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Failed to listen on port %d: %v", server.Port, err)
 	}
+	defer listener.Close()
 
 	grpcServer := grpc.NewServer()
+	reflection.Register(grpcServer)
 	pb.RegisterGatewayServiceServer(grpcServer, &GRPCServer{})
 
-	fmt.Printf("Starting gRPC server on port %d\n", server.Port)
-	if err := grpcServer.Serve(lis); err != nil {
-		fmt.Printf("Failed to serve: %v\n", err)
-	}
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatalf("Failed to start gRPC server: %v", err)
+		}
+	}()
+
+	fmt.Printf("gRPC server is running on port %d\n", server.Port)
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+
+	fmt.Println("\nShutting down gRPC server...")
+	grpcServer.GracefulStop()
+	fmt.Println("gRPC server stopped.")
 }
 
-// Shutdown_GRPC_Server shuts down the gRPC server
 func Shutdown_GRPC_Server(server *Server) {
 	fmt.Println("Shutting down gRPC server")
 	os.Exit(0)
 }
 
-// GetNodeInfo handles the gRPC request
-func (s *GRPCServer) GetNodeInfo(ctx context.Context, req *pb.NodeRequest) (*pb.NodeResponse, error) {
-	var node *config.Node
+func (s *GRPCServer) HandleRequest(ctx context.Context, req *pb.GatewayRequest) (*pb.GatewayResponse, error) {
+	fmt.Println("Received gRPC request for height:", req.Height)
 
-	if req.Height != "" {
-		h, err := strconv.ParseUint(req.Height, 10, 64)
+	var node *config.Node
+	heightStr := req.Height
+
+	if heightStr != "" {
+		h, err := strconv.ParseUint(heightStr, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid height: %v", err)
 		}
+
 		node = config.GetNodebyHeight(h)
 		if node == nil {
 			return nil, fmt.Errorf("node not found")
+		} else {
+			fmt.Println("Node gRPC URL:", node.GRPC)
 		}
-		fmt.Println("Node: ", node.RPC)
 	}
 
-	return &pb.NodeResponse{RpcUrl: node.RPC}, nil
+	response := &pb.GatewayResponse{
+		Message: fmt.Sprintf("Request forwarded to node at %s", node.GRPC),
+	}
+
+	return response, nil
 }
