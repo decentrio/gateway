@@ -1,0 +1,111 @@
+package config
+
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
+type Node struct {
+	RPC  string `yaml:"rpc"`
+	API   string `yaml:"api"`
+	GRPC  string `yaml:"grpc"`
+	JSONRPC string `yaml:"jsonrpc"`
+	JSONRPC_WS string `yaml:"jsonrpc_ws"`
+	Blocks []uint64 `yaml:"blocks"`
+}
+
+type Ports struct {
+	RPC  uint16 `yaml:"rpc"`
+	GRPC uint16 `yaml:"grpc"`
+	API  uint16 `yaml:"api"`
+	JSONRPC uint16 `yaml:"jsonrpc"`
+	JSONRPC_WS uint16 `yaml:"jsonrpc_ws"`
+}
+
+type Config struct {
+	Upstream []Node `yaml:"upstream"`
+	Ports    Ports      `yaml:"ports"`
+}
+
+var DefaultConfig = Config{
+	Upstream: []Node{
+		{
+			RPC:  "http://localhost:26657",
+			API:  "http://localhost:1317",
+			GRPC: "localhost:9090",
+			JSONRPC: "http://localhost:8545",
+			JSONRPC_WS: "http://localhost:8546/websocket",
+			Blocks: []uint64{1, 1000},
+		},
+	},
+	Ports: Ports{
+		RPC: 26657,
+		GRPC: 9090,
+		API:  1317,
+		JSONRPC: 8545,
+		JSONRPC_WS: 8546,
+	},
+}
+
+var cfg *Config
+
+func GenerateConfig() error {
+	data, err := yaml.Marshal(DefaultConfig)
+	if err != nil {
+		return fmt.Errorf("failed to marshal default config: %w", err)
+	}
+	err = os.WriteFile("config.yaml", data, os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("failed to write default config: %w", err)
+	}
+	return nil
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	config := &Config{}
+	file, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+	err = yaml.Unmarshal(file, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	for i, node := range config.Upstream {
+		if len(node.Blocks) != 2 {
+			return nil, fmt.Errorf("invalid blocks range for node %d", i + 1)
+		}
+	}
+
+	return config, nil
+}
+
+func GetConfig() *Config {
+	return cfg
+}
+
+func SetConfig(config *Config) {
+	cfg = config
+}
+
+func GetNodebyHeight(height uint64) *Node {
+	for _, node := range cfg.Upstream {
+		if height == 0 {  // latest height
+			if node.Blocks[1] == 0 { // get latest node as default
+				return &node
+			}
+		} else {
+			if node.Blocks[1] != 0 {
+				if height >= node.Blocks[0] && height <= node.Blocks[1] {
+					return &node
+				}
+			} else if height >= node.Blocks[0] {
+				return &node
+			}
+		}
+	} 
+	return nil
+}
