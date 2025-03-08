@@ -5,6 +5,7 @@ go 1.23.5
 toolchain go1.24.0
 
 require (
+	github.com/gorilla/websocket v1.5.3
 	github.com/spf13/cobra v1.9.1
 	google.golang.org/grpc v1.71.0
 	google.golang.org/protobuf v1.36.4
