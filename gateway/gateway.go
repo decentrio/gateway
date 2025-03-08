@@ -53,8 +53,8 @@ func NewServer(cfg *config.Config, serverType string) Server {
 		new_server.Shutdown = Shutdown_JSON_RPC_Server
 	case "jsonrpc_ws":
 		new_server.Port = cfg.Ports.JSONRPC_WS
-		new_server.Start = Start_JSONRPC_WS_Server
-		new_server.Shutdown = Shutdown_JSONRPC_WS_Server
+		new_server.Start = Start_JSON_RPC_WS_Server
+		new_server.Shutdown = Shutdown_JSON_RPC_WS_Server
 	default:
 		fmt.Println("Invalid server type")
 		os.Exit(1)
