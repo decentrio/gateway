@@ -49,11 +49,12 @@ func Start_GRPC_Server(server *Server) {
 			}
 			selectedHost = node.GRPC
 		} else {
-			nodes := config.GetNodesByType("grpc")
-			if len(nodes) == 0 {
+			node := config.GetNodebyHeight(0)
+			if node != nil {
+				selectedHost = node.GRPC
+			} else {
 				return nil, nil, status.Errorf(codes.Unavailable, "No available gRPC backends")
 			}
-			selectedHost = nodes[0]
 		}
 
 		fmt.Printf("Forwarding request %s to node: %s\n", fullMethodName, selectedHost)
