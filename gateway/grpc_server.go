@@ -23,8 +23,7 @@ type GrpcServer struct {
 }
 
 func Start_GRPC_Server(server *Server) {
-	fmt.Println("StartGrpcServer...")
-
+	fmt.Printf("Starting gRPC server on port %d\n", server.Port)
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: false,
 	}
