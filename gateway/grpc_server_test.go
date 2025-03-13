@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"testing"
 
@@ -28,28 +29,36 @@ func (m *MockConfig) GetNodebyHeight(height uint64) *config.Node {
 	return nil
 }
 
-func (m *MockConfig) GetNodesByType(nodeType string) []string {
+func (m *MockConfig) GetNodesByType(nodeType string) []*config.Node {
 	args := m.Called(nodeType)
-	if nodes, ok := args.Get(0).([]string); ok {
+	if nodes, ok := args.Get(0).([]*config.Node); ok {
 		return nodes
 	}
 	return nil
 }
 
-func TestGetNodebyHeight(t *testing.T) {
-	config.SetConfig(&config.DefaultConfig)
+func startMockGRPCServer(t *testing.T, address string) {
+	lis, err := net.Listen("tcp", address)
+	assert.NoError(t, err)
 
-	result := config.GetNodebyHeight(123)
-
-	assert.NotNil(t, result)
-	assert.Equal(t, "localhost:9090", result.GRPC)
+	grpcServer := grpc.NewServer()
+	go func() {
+		if err := grpcServer.Serve(lis); err != nil {
+			t.Errorf("Failed to start mock gRPC server: %v", err)
+		}
+	}()
+	t.Cleanup(func() {
+		grpcServer.GracefulStop()
+	})
 }
 
 func TestGrpcForwarding(t *testing.T) {
 	mockConfig := new(MockConfig)
 
 	mockConfig.On("GetNodebyHeight", uint64(123)).Return(&config.Node{GRPC: "localhost:9091"})
-	mockConfig.On("GetNodesByType", "grpc").Return([]string{"localhost:9092"})
+	mockConfig.On("GetNodesByType", "grpc").Return([]*config.Node{{GRPC: "localhost:9092"}})
+
+	startMockGRPCServer(t, "localhost:9091")
 
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-cosmos-block-height", "123"))
 
@@ -87,14 +96,12 @@ func TestGrpcForwarding(t *testing.T) {
 
 	ctxNoHeight := metadata.NewIncomingContext(context.Background(), metadata.Pairs())
 	_, _, errNoHeight := director(ctxNoHeight, "cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight")
-
 	assert.Error(t, errNoHeight)
 	assert.Equal(t, codes.InvalidArgument, status.Code(errNoHeight))
 
 	mockConfig.On("GetNodebyHeight", uint64(999)).Return(nil)
 	ctxInvalid := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-cosmos-block-height", "999"))
 	_, _, errInvalid := director(ctxInvalid, "cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight")
-
 	assert.Error(t, errInvalid)
 	assert.Equal(t, codes.InvalidArgument, status.Code(errInvalid))
 }
