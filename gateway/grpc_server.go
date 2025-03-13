@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 
@@ -52,11 +53,10 @@ func Start_GRPC_Server(server *Server) {
 			if len(nodes) == 0 {
 				return nil, nil, status.Errorf(codes.Unavailable, "No available gRPC backends")
 			}
-			selectedHost = nodes[0] 
+			selectedHost = nodes[0]
 		}
 
 		fmt.Printf("Forwarding request %s to node: %s\n", fullMethodName, selectedHost)
-
 
 		if strings.HasSuffix(selectedHost, ":443") {
 			conn, err := grpc.DialContext(ctx, selectedHost, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -84,4 +84,5 @@ func Start_GRPC_Server(server *Server) {
 
 func Shutdown_GRPC_Server(server *Server) {
 	fmt.Println("Shutting down gRPC server...")
+	os.Exit(0)
 }
