@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/decentrio/gateway/config"
-	"github.com/decentrio/gateway/httpUtils"
+	"github.com/decentrio/gateway/utils"
 )
 
 func Start_API_Server(server *Server) {
@@ -73,7 +73,7 @@ func (server *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No node found", http.StatusNotFound)
 		return
 	} else {
-		fmt.Println("Node: ", node.API)
+		fmt.Println("Node called: ", node.API)
 	}
 	httpUtils.FowardRequest(w, r, node.API)
 }
