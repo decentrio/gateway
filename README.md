@@ -52,7 +52,7 @@ grpcurl -plaintext localhost:5002 describe <service_name>/<method_name>
 grpcurl -v -d '{"height": "123"}' \
   -H "x-cosmos-block-height: 123" \
   -plaintext \
-  localhost:9090 cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight
+  localhost:5002 cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight
 ```
 - No header:
 ```bash
@@ -63,5 +63,5 @@ grpcurl -v -d '{"height": "123"}' \
 - Get tx info:
 ```bash
 grpcurl -plaintext -d '{"hash": "64DFDC0F4B9096ADFC644B2DF087E7B9225C8601719C4C2BB2E979AD83081713"}' \
-    localhost:9090 cosmos.tx.v1beta1.Service/GetTx
+    localhost:5002 cosmos.tx.v1beta1.Service/GetTx
 ```
