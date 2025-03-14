@@ -7,11 +7,11 @@
 #  List of sub nodes, with endpoints and port ranges.
 upstream: 
  - rpc: "http://node1:26657"
-    api: "http://node1:1317"
-    grpc: "node1:9090"
-    eth: "http://node1:8545"
-    ethws: "http://node1:8546/websocket"
-    blocks: [1000, 2000]
+   api: "http://node1:1317"
+   grpc: "node1:9090"
+   jsonrpc: "http://node1:8545"
+   jsonrpc_ws: "ws://node1:8546/websocket"
+   blocks: [1000, 2000]
  -...
 
 # Gateway's custom port
