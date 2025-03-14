@@ -76,7 +76,8 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 		"/subscribe",
 		"/unsubscribe",
 		"/unsubscribe_all",
-		"/websocket":
+		"/websocket", 
+		"/":
 		node = config.GetNodebyHeight(0)
 		if node == nil {
 			http.Error(w, "Node not found", http.StatusNotFound)
@@ -206,7 +207,7 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	default:
-		http.Error(w, "Invalid path", http.StatusNotFound)
+		http.Error(w, "404 page not found", http.StatusNotFound)
 		return
 	}
 }
