@@ -271,22 +271,22 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 	} else {
 		switch req.Method {
 		case "block", 
-			"/abci_info",
-			"/broadcast_evidence",
-			"/broadcast_tx_async",
-			"/broadcast_tx_commit",
-			"/broadcast_tx_sync",
-			"/consensus_state",
-			"/dump_consensus_state",
-			"/genesis",
-			"/genesis_chunked",
-			"/health",
-			"/net_info",
-			"/num_unconfirmed_txs",
-			"/status",
-			"/subscribe",
-			"/unsubscribe",
-			"/unsubscribe_all":
+			"abci_info",
+			"broadcast_evidence",
+			"broadcast_tx_async",
+			"broadcast_tx_commit",
+			"broadcast_tx_sync",
+			"consensus_state",
+			"dump_consensus_state",
+			"genesis",
+			"genesis_chunked",
+			"health",
+			"net_info",
+			"num_unconfirmed_txs",
+			"status",
+			"subscribe",
+			"unsubscribe",
+			"unsubscribe_all":
 			// cases that should return latest node
 			node := config.GetNodebyHeight(0)
 			if node == nil {
@@ -298,12 +298,12 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 			r.ContentLength = int64(len(body))
 			httpUtils.FowardRequest(w, r, node.RPC)
 			return
-		case "/block_by_hash",
-			"/block_search",
-			"/check_tx",
-			"/header_by_hash",
-			"/tx",
-			"/tx_search":
+		case "block_by_hash",
+			"block_search",
+			"check_tx",
+			"header_by_hash",
+			"tx",
+			"tx_search":
 			RPC_nodes := config.GetNodesByType("rpc")
 			var msg string = "" // msg to return to client
 			for _, url := range RPC_nodes {
