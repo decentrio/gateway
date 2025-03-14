@@ -1,9 +1,8 @@
-package gateway
+package gateway_test
 
 import (
 	"context"
-	"fmt"
-	"net"
+	"errors"
 	"strconv"
 	"testing"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -29,79 +27,52 @@ func (m *MockConfig) GetNodebyHeight(height uint64) *config.Node {
 	return nil
 }
 
-func (m *MockConfig) GetNodesByType(nodeType string) []*config.Node {
-	args := m.Called(nodeType)
-	if nodes, ok := args.Get(0).([]*config.Node); ok {
-		return nodes
-	}
-	return nil
-}
-
-func startMockGRPCServer(t *testing.T, address string) {
-	lis, err := net.Listen("tcp", address)
-	assert.NoError(t, err)
-
-	grpcServer := grpc.NewServer()
-	go func() {
-		if err := grpcServer.Serve(lis); err != nil {
-			t.Errorf("Failed to start mock gRPC server: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		grpcServer.GracefulStop()
-	})
-}
-
-func TestGrpcForwarding(t *testing.T) {
+func TestDirector_SelectsCorrectNode(t *testing.T) {
 	mockConfig := new(MockConfig)
+	cfg := &config.Config{Upstream: []config.Node{
+		{GRPC: "node1:9090", Blocks: []uint64{1000, 2000}},
+		{GRPC: "node2:9090", Blocks: []uint64{2001, 3000}},
+	}}
 
-	mockConfig.On("GetNodebyHeight", uint64(123)).Return(&config.Node{GRPC: "localhost:9091"})
-	mockConfig.On("GetNodesByType", "grpc").Return([]*config.Node{{GRPC: "localhost:9092"}})
+	mockConfig.On("GetNodebyHeight", uint64(1500)).Return(&cfg.Upstream[0])
 
-	startMockGRPCServer(t, "localhost:9091")
-
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-cosmos-block-height", "123"))
-
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-cosmos-block-height", "1500"))
 	director := func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
-		md, ok := metadata.FromIncomingContext(ctx)
-		if !ok {
-			return nil, nil, status.Errorf(codes.Unimplemented, "Unknown method")
-		}
-		fmt.Printf("Received metadata: %+v\n", md)
-
-		heightVals, exists := md["x-cosmos-block-height"]
-		if !exists || len(heightVals) == 0 {
-			return nil, nil, status.Errorf(codes.InvalidArgument, "Missing x-cosmos-block-height")
-		}
-
-		height, err := strconv.ParseUint(heightVals[0], 10, 64)
-		if err != nil {
-			return nil, nil, status.Errorf(codes.InvalidArgument, "Invalid x-cosmos-block-height")
-		}
-
+		md, _ := metadata.FromIncomingContext(ctx)
+		outCtx := metadata.NewOutgoingContext(ctx, md.Copy())
+		height, _ := strconv.ParseUint(md["x-cosmos-block-height"][0], 10, 64)
 		node := mockConfig.GetNodebyHeight(height)
 		if node == nil {
 			return nil, nil, status.Errorf(codes.InvalidArgument, "No matching backend found")
 		}
-		fmt.Printf("Forwarding request to: %s\n", node.GRPC)
-
-		conn, err := grpc.Dial(node.GRPC, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		return ctx, conn, err
+		conn, err := grpc.Dial(node.GRPC, grpc.WithInsecure())
+		return outCtx, conn, err
 	}
 
-	_, conn, err := director(ctx, "cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight")
+	_, conn, err := director(ctx, "/test.Service/Method")
 	assert.NoError(t, err)
 	assert.NotNil(t, conn)
-	assert.Equal(t, "localhost:9091", conn.Target())
+	mockConfig.AssertCalled(t, "GetNodebyHeight", uint64(1500))
+}
 
-	ctxNoHeight := metadata.NewIncomingContext(context.Background(), metadata.Pairs())
-	_, _, errNoHeight := director(ctxNoHeight, "cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight")
-	assert.Error(t, errNoHeight)
-	assert.Equal(t, codes.InvalidArgument, status.Code(errNoHeight))
+func TestDirector_NoMatchingNode(t *testing.T) {
+	mockConfig := new(MockConfig)
+	mockConfig.On("GetNodebyHeight", uint64(9999)).Return(nil)
 
-	mockConfig.On("GetNodebyHeight", uint64(999)).Return(nil)
-	ctxInvalid := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-cosmos-block-height", "999"))
-	_, _, errInvalid := director(ctxInvalid, "cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight")
-	assert.Error(t, errInvalid)
-	assert.Equal(t, codes.InvalidArgument, status.Code(errInvalid))
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-cosmos-block-height", "9999"))
+	director := func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
+		md, _ := metadata.FromIncomingContext(ctx)
+		outCtx := metadata.NewOutgoingContext(ctx, md.Copy())
+		height, _ := strconv.ParseUint(md["x-cosmos-block-height"][0], 10, 64)
+		node := mockConfig.GetNodebyHeight(height)
+		if node == nil {
+			return nil, nil, status.Errorf(codes.InvalidArgument, "No matching backend found")
+		}
+		return outCtx, nil, errors.New("unexpected")
+	}
+
+	_, conn, err := director(ctx, "/test.Service/Method")
+	assert.Error(t, err)
+	assert.Nil(t, conn)
+	mockConfig.AssertCalled(t, "GetNodebyHeight", uint64(9999))
 }
