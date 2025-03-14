@@ -20,6 +20,7 @@
     ```bash
     binaryd --node http://localhost:5001 q tx 64DFDC0F4B9096ADFC644B2DF087E7B9225C8601719C4C2BB2E979AD83081713
     ```
+    
 ### API
  > Note: swagger does not work
 
