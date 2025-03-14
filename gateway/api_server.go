@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/decentrio/gateway/config"
-	"github.com/decentrio/gateway/httpUtils"
+	"github.com/decentrio/gateway/utils"
 )
 
 func Start_API_Server(server *Server) {
