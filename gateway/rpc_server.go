@@ -10,11 +10,17 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync/atomic"
 	"syscall"
-
+	"time"
 	"github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	"github.com/decentrio/gateway/config"
 	"github.com/decentrio/gateway/utils"
+)
+
+var (
+	rpcServers  = make(map[uint16]*http.Server)
+	activeRPCRequestCount int32
 )
 
 func Start_RPC_Server(server *Server) {
@@ -38,25 +44,68 @@ func Start_RPC_Server(server *Server) {
 		Handler: mux,
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
-		fmt.Printf("Failed to start RPC server: %v\n", err)
-	}
+	mu.Lock()
+	rpcServers[server.Port] = srv
+	mu.Unlock()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
+	go func() {
+		<-stop
+		Shutdown_RPC_Server(server)
+	}()
 
-	fmt.Println("\nShutting down RPC server ...")
-	srv.Shutdown(context.Background())
-	fmt.Println("RPC server stopped.")
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Printf("Failed to start RPC server: %v\n", err)
+	}
 }
 
 func Shutdown_RPC_Server(server *Server) {
-	fmt.Println("Shutting down RPC server ...")
-	os.Exit(0)
+	mu.Lock()
+	srv, exists := rpcServers[server.Port]
+	if !exists {
+		mu.Unlock()
+		return
+	}
+	delete(rpcServers, server.Port)
+	mu.Unlock()
+
+	fmt.Printf("Waiting for %d active requests to complete before shutting down RPC server...\n", atomic.LoadInt32(&activeRPCRequestCount))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait() 
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		fmt.Println("All active requests completed. Proceeding with shutdown...")
+	case <-ctx.Done():
+		fmt.Println("[WARNING] Timeout waiting for requests. Forcing shutdown...")
+	}
+
+	if err := srv.Shutdown(ctx); err != nil {
+		fmt.Printf("Error shutting down RPC server: %v\n", err)
+	} else {
+		fmt.Println("RPC server stopped.")
+	}
 }
 
-func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
+
+func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
+	atomic.AddInt32(&activeRPCRequestCount, 1) 
+	wg.Add(1)
+
+	defer func() {
+		wg.Done()
+		atomic.AddInt32(&activeRPCRequestCount, -1) 
+	}()
+
+	fmt.Printf("Received RPC query: %s\n", r.URL.Path)
 	var node *config.Node
 
 	switch r.URL.Path {
@@ -87,6 +136,7 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		httpUtils.FowardRequest(w, r, node.RPC)
 		return
+
 	case "/abci_query",
 		"/block",
 		"/block_results",
@@ -101,7 +151,6 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Invalid height", http.StatusBadRequest)
 				return
 			}
-
 			node = config.GetNodebyHeight(h)
 			if node == nil {
 				http.Error(w, "Node not found", http.StatusNotFound)
@@ -138,7 +187,6 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid height", http.StatusBadRequest)
 			return
 		}
-
 		node = config.GetNodebyHeight(h)
 		if node == nil {
 			http.Error(w, "Node not found", http.StatusNotFound)
@@ -149,6 +197,7 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 
 		httpUtils.FowardRequest(w, r, node.RPC)
 		return
+
 	case "/block_by_hash",
 		"/block_search",
 		"/check_tx",
@@ -204,6 +253,7 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
 		return
+
 	default:
 		http.Error(w, "404 page not found", http.StatusNotFound)
 		return

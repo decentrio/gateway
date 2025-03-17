@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	// "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	"github.com/decentrio/gateway/config"
@@ -31,14 +34,25 @@ type JSONRPCResponse struct {
 	ID      int         `json:"id"`
 }
 
+var (
+	jsonRPCServers = make(map[uint16]*http.Server)
+	activeJsonRPCRequestCount int32 
+)
+
 func Start_JSON_RPC_Server(server *Server) {
+	fmt.Printf("Starting JSON-RPC server on port %d\n", server.Port)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", handleJSONRPC)
+	mux.HandleFunc("/", trackRequestsMiddleware(handleJSONRPC))
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", server.Port),
 		Handler: mux,
 	}
+
+	mu.Lock()
+	jsonRPCServers[server.Port] = srv
+	mu.Unlock()
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -46,17 +60,60 @@ func Start_JSON_RPC_Server(server *Server) {
 		}
 	}()
 
-	fmt.Printf("JSON-RPC server is running on port %d\n", server.Port)
-
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	fmt.Println("\nShutting down JSON-RPC server...")
-	if err := srv.Close(); err != nil {
-		log.Fatalf("Error shutting down JSON-RPC server: %v", err)
+	Shutdown_JSON_RPC_Server(server)
+}
+
+func Shutdown_JSON_RPC_Server(server *Server) {
+	mu.Lock()
+	srv, exists := jsonRPCServers[server.Port]
+	if !exists {
+		mu.Unlock()
+		return
 	}
-	fmt.Println("JSON-RPC server stopped.")
+	delete(jsonRPCServers, server.Port)
+	mu.Unlock()
+
+	fmt.Printf("Waiting for %d active requests to complete before shutting down JSON-RPC server...\n", atomic.LoadInt32(&activeJsonRPCRequestCount))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait() 
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		fmt.Println("All active requests completed. Proceeding with shutdown...")
+	case <-ctx.Done():
+		fmt.Println("[WARNING] Timeout waiting for requests. Forcing shutdown...")
+	}
+
+	if err := srv.Shutdown(ctx); err != nil {
+		fmt.Printf("Error shutting down JSON-RPC server: %v\n", err)
+	} else {
+		fmt.Println("JSON-RPC server stopped.")
+	}
+}
+
+func trackRequestsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&activeJsonRPCRequestCount, 1) 
+		wg.Add(1)                       
+
+		defer func() {
+			wg.Done()                        
+			atomic.AddInt32(&activeJsonRPCRequestCount, -1) 
+		}()
+
+		next(w, r)
+	}
 }
 
 func Shutdown_JSON_RPC_Server(server *Server) {

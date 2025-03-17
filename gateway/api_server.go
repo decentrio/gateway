@@ -1,15 +1,22 @@
 package gateway
 
 import (
+	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 	"slices"
 
 	"github.com/decentrio/gateway/config"
 	"github.com/decentrio/gateway/utils"
+)
+
+var (
+	apiServers   = make(map[uint16]*http.Server)
+	activeAPIRequestCount int32 
 )
 
 func Start_API_Server(server *Server) {
@@ -23,21 +30,63 @@ func Start_API_Server(server *Server) {
 		Handler: mux,
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
+	mu.Lock()
+	apiServers[server.Port] = srv
+	mu.Unlock()
+
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Printf("Error starting API server: %v\n", err)
 	}
 }
 
 func Shutdown_API_Server(server *Server) {
-	fmt.Println("Shutting down API server")
-	os.Exit(0)
+	mu.Lock()
+	srv, exists := apiServers[server.Port]
+	if !exists {
+		mu.Unlock()
+		fmt.Println("API server is not running.")
+		return
+	}
+	delete(apiServers, server.Port)
+	mu.Unlock()
+
+	fmt.Printf("Waiting for %d active requests to complete before shutting down API server...\n", atomic.LoadInt32(&activeAPIRequestCount))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		fmt.Println("All API requests completed. Proceeding with shutdown...")
+	case <-ctx.Done():
+		fmt.Println("[WARNING] Timeout waiting for API requests. Forcing shutdown...")
+	}
+
+	if err := srv.Shutdown(ctx); err != nil {
+		fmt.Printf("Error shutting down API server: %v\n", err)
+	} else {
+		fmt.Println("API server stopped.")
+	}
 }
 
 func (server *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {
+	atomic.AddInt32(&activeAPIRequestCount, 1) 
+	wg.Add(1)
+	defer func() {
+		wg.Done()
+		atomic.AddInt32(&activeAPIRequestCount, -1) 
+	}()
+
 	fmt.Printf("Received API query: %s\n", r.URL.Path)
 	var node *config.Node
 	var height uint64 = 0
 	var err error
+
 	if r.Method != "GET" && r.Method != "POST" {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
