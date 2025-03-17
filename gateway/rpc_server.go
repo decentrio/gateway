@@ -195,15 +195,13 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					return
 				}
-				if msg != string(body) {
-					msg = string(body)
-				}
+				msg = string(body)
 				continue
 			}
 		}
 		if msg != "" {
 			// all nodes returned same non-200 response (?)
-			fmt.Fprintln(w, msg)
+			http.Error(w, msg, http.StatusInternalServerError)
 		}
 		return
 	default:
@@ -333,8 +331,8 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 						return
 					}
 					break
-				} else {
-					// node returned a non-200 response
+				} else if res.StatusCode == http.StatusInternalServerError {
+					// node returned a 500 response
 					fmt.Println("Node called:", url)
 					if res.Body != nil {
 						defer res.Body.Close()
@@ -344,15 +342,13 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 					if err != nil {
 						return
 					}
-					if msg != string(body) {
-						msg = string(body)
-					}
+					msg = string(body)
 					continue
 				}
 			}
 			if msg != "" {
-				// all nodes returned same non-200 response (?)
-				fmt.Fprintln(w, msg)
+				// all nodes returned same 500 response (?)
+				http.Error(w, msg, http.StatusInternalServerError)
 			}
 			return
 		case "blockchain":
