@@ -96,7 +96,7 @@ func Shutdown_RPC_Server(server *Server) {
 }
 
 
-func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt32(&activeRPCRequestCount, 1) 
 	wg.Add(1)
 

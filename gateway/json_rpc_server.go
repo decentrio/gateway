@@ -116,11 +116,6 @@ func trackRequestsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func Shutdown_JSON_RPC_Server(server *Server) {
-	fmt.Println("Shutting down JSON-RPC server")
-	os.Exit(0)
-}
-
 func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	var node *config.Node
 	if r.Method != http.MethodPost {

@@ -92,11 +92,6 @@ func Shutdown_JSON_RPC_WS_Server(server *Server) {
 	}
 }
 
-func Shutdown_JSON_RPC_WS_Server(server *Server) {
-	fmt.Println("Shutting down WebSocket server")
-	os.Exit(0)
-}
-
 func isWebSocketAvailable(wsURL string) bool {
 	wsURL = strings.TrimPrefix(wsURL, "ws://")
 	wsURL = strings.TrimPrefix(wsURL, "wss://")
