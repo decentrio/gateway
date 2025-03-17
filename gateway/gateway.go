@@ -92,8 +92,6 @@ func (g *Gateway) Shutdown() {
 		&g.RPC_Server, &g.GRPC_Server, &g.API_Server, &g.JSON_RPC_Server, &g.JSON_RPC_WS_Server,
 	}
 
-	fmt.Println("Shutting down servers...")
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

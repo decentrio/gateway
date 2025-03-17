@@ -67,7 +67,7 @@ func Shutdown_JSON_RPC_WS_Server(server *Server) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	fmt.Printf("Waiting for %d active WebSocket requests to complete before shutting down...\n", atomic.LoadInt32(&activeJsonRPCWSRequestCount))
+	fmt.Printf("Waiting for %d requests to complete before shutting down JSON-RPC-WebSocket server ...\n", atomic.LoadInt32(&activeJsonRPCWSRequestCount))
 
 	done := make(chan struct{})
 	go func() {

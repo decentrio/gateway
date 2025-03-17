@@ -49,7 +49,7 @@ func Shutdown_API_Server(server *Server) {
 	delete(apiServers, server.Port)
 	mu.Unlock()
 
-	fmt.Printf("Waiting for %d active API requests before shutdown...\n", atomic.LoadInt32(&activeAPIRequestCount))
+	fmt.Printf("Waiting for %d active requests to complete before shutting down API server...\n", atomic.LoadInt32(&activeAPIRequestCount))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
