@@ -2,8 +2,10 @@ package gateway
 
 import (
 	"context"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +13,9 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	// "github.com/cometbft/cometbft/rpc/jsonrpc/types"
+	"github.com/decentrio/gateway/config"
 )
 
 // JSON-RPC request format
@@ -111,20 +116,73 @@ func trackRequestsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func Shutdown_JSON_RPC_Server(server *Server) {
+	fmt.Println("Shutting down JSON-RPC server")
+	os.Exit(0)
+}
+
 func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
+	var node *config.Node
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
 
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusInternalServerError)
+		return
+	}
+	r.Body.Close()
+
 	var req JSONRPCRequest
-	err := json.NewDecoder(r.Body).Decode(&req)
+	err = json.Unmarshal(body, &req)
 	if err != nil {
 		http.Error(w, "Invalid JSON-RPC request", http.StatusBadRequest)
 		return
 	}
 
 	fmt.Printf("Received JSON-RPC request: Method=%s, Params=%v, ID=%d\n", req.Method, req.Params, req.ID)
+
+	var height uint64
+	if params, ok := req.Params.(map[string]interface{}); ok {
+		if h, ok := params["height"].(float64); ok {
+			height = uint64(h)
+		}
+	}
+
+
+	if height > 0 {
+		node = config.GetNodebyHeight(height)
+		if node == nil {
+			http.Error(w, "Node not found", http.StatusNotFound)
+			return
+		}
+	}
+
+	if node != nil {
+		fmt.Printf("Forwarding to Node:", node.JSONRPC)
+
+		reqForward, err := http.NewRequest("POST", node.JSONRPC, bytes.NewReader(body))
+		if err != nil {
+			http.Error(w, "Failed to create request", http.StatusInternalServerError)
+			return
+		}
+
+		reqForward.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{}
+		resp, err := client.Do(reqForward)
+		if err != nil {
+			http.Error(w, "Failed to forward request", http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+		return
+	}
 
 	resp := JSONRPCResponse{
 		JSONRPC: "2.0",

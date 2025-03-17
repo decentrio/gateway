@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"sync/atomic"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/decentrio/gateway/config"
 	"github.com/gorilla/websocket"
 )
 
@@ -89,7 +92,28 @@ func Shutdown_JSON_RPC_WS_Server(server *Server) {
 	}
 }
 
+func Shutdown_JSON_RPC_WS_Server(server *Server) {
+	fmt.Println("Shutting down WebSocket server")
+	os.Exit(0)
+}
+
+func isWebSocketAvailable(wsURL string) bool {
+	wsURL = strings.TrimPrefix(wsURL, "ws://")
+	wsURL = strings.TrimPrefix(wsURL, "wss://")
+
+	hostPort := strings.Split(wsURL, "/")[0] 
+
+	conn, err := net.DialTimeout("tcp", hostPort, 2*time.Second)
+	if err != nil {
+		log.Printf("WebSocket %s is not available: %v", wsURL, err)
+		return false
+	}
+	conn.Close()
+	return true
+}
+
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	var node *config.Node
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade failed: %v", err)
@@ -128,16 +152,45 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		fmt.Printf("Received JSON-RPC WS request: Method=%s, Params=%v, ID=%d\n", req.Method, req.Params, req.ID)
 
-		resp := JSONRPCResponse{
-			JSONRPC: "2.0",
-			Result:  fmt.Sprintf("Method %s executed successfully", req.Method),
-			ID:      req.ID,
+		var height uint64
+		if params, ok := req.Params.(map[string]interface{}); ok {
+			if h, ok := params["height"].(float64); ok {
+				height = uint64(h)
+			}
 		}
 
-		respJSON, _ := json.Marshal(resp)
-		if err := conn.WriteMessage(websocket.TextMessage, respJSON); err != nil {
-			log.Printf("Error writing WebSocket response: %v", err)
-			break
+		if height > 0 {
+			node = config.GetNodebyHeight(height)
+			if node == nil {
+				respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":"Node not found","id":%d}`, req.ID)
+				conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
+				continue
+			}
+		}
+
+		if node != nil {
+			fmt.Printf("Forwarding to Node: ", node.JSONRPC_WS)
+
+			if !isWebSocketAvailable(node.JSONRPC_WS) {
+				log.Printf("WebSocket unavailable: %s", node.JSONRPC_WS)
+				respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":"WebSocket node unavailable","id":%d}`, req.ID)
+				conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
+				continue
+			}
+
+			dialURL := strings.TrimPrefix(node.JSONRPC_WS, "ws://")
+			dialURL = strings.TrimPrefix(dialURL, "wss://")
+			hostPort := strings.Split(dialURL, "/")[0] 
+
+			nodeConn, _, err := websocket.DefaultDialer.Dial("ws://"+hostPort, nil)
+
+			if err != nil {
+				log.Printf("Failed to connect to jsonRPC WebSocket: %v", err)
+				respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":"Failed to connect to jsonRPC WebSocket","id":%d}`, req.ID)
+				conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
+				continue
+			}
+			defer nodeConn.Close()
 		}
 	}
 }

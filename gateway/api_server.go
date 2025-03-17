@@ -8,9 +8,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"slices"
 
 	"github.com/decentrio/gateway/config"
-	"github.com/decentrio/gateway/httpUtils"
+	"github.com/decentrio/gateway/utils"
 )
 
 var (
@@ -83,7 +84,7 @@ func (server *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("Received API query: %s\n", r.URL.Path)
 	var node *config.Node
-	var height uint64
+	var height uint64 = 0
 	var err error
 
 	if r.Method != "GET" && r.Method != "POST" {
@@ -94,27 +95,24 @@ func (server *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {
 		if height_header != "" {
 			height, err = strconv.ParseUint(height_header, 10, 64)
 			if err != nil {
-				http.Error(w, "Invalid height", http.StatusBadRequest)
+				http.Error(w, fmt.Sprintf("{\"code\":3,\"message\":\"type mismatch, parameter: height, error: strconv.ParseInt: parsing \\\"%s\\\": invalid syntax\",\"details\":[]}", height_header), http.StatusBadRequest)
 				return
 			}
 		} else {
 			var path = r.URL.Path
 			pathSegments := strings.Split(path, "/")
+			path_with_height_params := []string{"block", "blocks", "validatorsets", "historical_info"}
 			if len(pathSegments) > 0 {
 				height_params := pathSegments[len(pathSegments)-1]
-				if height_params == "latest" {
-					height = 0
-				} else {
+				if slices.Contains(path_with_height_params, pathSegments[len(pathSegments)-2]) {
 					height, err = strconv.ParseUint(height_params, 10, 64)
 					if err != nil {
-						http.Error(w, "Invalid height", http.StatusBadRequest)
+						http.Error(w, fmt.Sprintf("{\"code\":3,\"message\":\"type mismatch, parameter: height, error: strconv.ParseInt: parsing \\\"%s\\\": invalid syntax\",\"details\":[]}", height_params), http.StatusBadRequest)
 						return
 					}
 				}
 			}
 		}
-	} else {
-		height = 0
 	}
 
 	node = config.GetNodebyHeight(height)
@@ -122,7 +120,7 @@ func (server *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No node found", http.StatusNotFound)
 		return
 	} else {
-		fmt.Println("Node: ", node.API)
+		fmt.Println("Node called: ", node.API)
 	}
 	httpUtils.FowardRequest(w, r, node.API)
 }
