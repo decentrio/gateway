@@ -20,7 +20,7 @@ upstream:
     api: "http://node1:1317"
     grpc: "node1:9090"
     eth: "http://node1:8545"
-    ethws: "ws://node1:8546/websocket"
+    ethws: "ws://node1:8546"
     blocks: [1000, 2000]
  -...
 
