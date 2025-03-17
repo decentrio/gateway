@@ -1,3 +1,42 @@
+# Gateway
+A gateway server for multiple cosmos nodes. Redirect requests to the corresponding nodes by height.
+
+```bash
+gateway start --config config.yaml
+```
+
+Config file syntax:
+
+```yaml
+# config.yaml
+
+#  block range will define type of nodes:
+#  - [1, 1000]: Subnode with specified block range
+#  - [1, 0]: Subnode with specified block range to the latest block (for querying without specifying block height)
+
+#  List of sub nodes, with endpoints and port ranges.
+upstream: 
+ - rpc: "http://node1:26657"
+    api: "http://node1:1317"
+    grpc: "node1:9090"
+    eth: "http://node1:8545"
+    ethws: "ws://node1:8546/websocket"
+    blocks: [1000, 2000]
+ -...
+
+# Gateway's custom port
+port:
+    rpc: 26657
+    api: 1317
+    grpc: 9090
+    eth: 8545
+    ethws: 8546
+```
+
+
+## Endpoint Structure
+https://www.postman.com/flight-astronomer-81853429/osmosis
+
 ## Testing
 ### RPC
  - `GET` method:
