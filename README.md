@@ -65,6 +65,11 @@ https://www.postman.com/flight-astronomer-81853429/osmosis
 
 
 ### gRPC
+##### Grpc UI:
+```bash
+grpcui -plaintext localhost:5002
+```
+
 ##### List available services:
 ```bash
 grpcurl -plaintext localhost:5002 list
