@@ -93,14 +93,14 @@ grpcurl -plaintext localhost:5002 describe <service_name>/<method_name>
 ##### Example:
 - Header:
 ```bash
-grpcurl -v -d '{"height": "123"}' \
+grpcurl -d '{"height": "123"}' \
   -H "x-cosmos-block-height: 123" \
   -plaintext \
   localhost:5002 cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight
 ```
 - No header:
 ```bash
-grpcurl -v -d '{"height": "123"}' \
+grpcurl -d '{"height": "123"}' \
   -plaintext \
   localhost:5002 cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight
 ```
