@@ -1,4 +1,4 @@
-# subnode.yaml
+# config.yaml
 
 #  block range will define type of nodes:
 #  - [1, 1000]: Subnode with specified block range
@@ -10,12 +10,11 @@ upstream:
    api: "http://node1:1317"
    grpc: "node1:9090"
    jsonrpc: "http://node1:8545"
-   jsonrpc_ws: "ws://node1:8546/websocket"
+   jsonrpc_ws: "ws://node1:8546"
    blocks: [1000, 2000]
  -...
 
 # Gateway's custom port
-# if set to 0, the endpoint won't start
 port:
     rpc: 26657
     api: 1317
