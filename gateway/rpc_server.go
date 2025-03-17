@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -15,7 +16,8 @@ import (
 )
 
 var (
-	rpcServers = make(map[uint16]*http.Server)
+	rpcServers  = make(map[uint16]*http.Server)
+	activeRPCRequestCount int32
 )
 
 func Start_RPC_Server(server *Server) {
@@ -55,8 +57,23 @@ func Shutdown_RPC_Server(server *Server) {
 	delete(rpcServers, server.Port)
 	mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	fmt.Printf("Waiting for %d active requests to complete before shutting down RPC server...\n", atomic.LoadInt32(&activeRPCRequestCount))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait() 
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		fmt.Println("All active requests completed. Proceeding with shutdown...")
+	case <-ctx.Done():
+		fmt.Println("[WARNING] Timeout waiting for requests. Forcing shutdown...")
+	}
 
 	if err := srv.Shutdown(ctx); err != nil {
 		fmt.Printf("Error shutting down RPC server: %v\n", err)
@@ -66,28 +83,36 @@ func Shutdown_RPC_Server(server *Server) {
 }
 
 func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
+	atomic.AddInt32(&activeRPCRequestCount, 1) 
+	wg.Add(1)
+
+	defer func() {
+		wg.Done()
+		atomic.AddInt32(&activeRPCRequestCount, -1) 
+	}()
+
 	fmt.Printf("Received RPC query: %s\n", r.URL.Path)
-	
+
 	var node *config.Node
 
 	switch r.URL.Path {
 	case "/abci_info",
-		 "/broadcast_evidence",
-		 "/broadcast_tx_async",
-		 "/broadcast_tx_commit",
-		 "/broadcast_tx_sync",
-		 "/consensus_state",
-		 "/dump_consensus_state",
-		 "/genesis",
-		 "/genesis_chunked",
-		 "/health",
-		 "/net_info",
-		 "/num_unconfirmed_txs",
-		 "/status",
-		 "/subscribe",
-		 "/unsubscribe",
-		 "/unsubscribe_all",
-		 "/websocket":
+		"/broadcast_evidence",
+		"/broadcast_tx_async",
+		"/broadcast_tx_commit",
+		"/broadcast_tx_sync",
+		"/consensus_state",
+		"/dump_consensus_state",
+		"/genesis",
+		"/genesis_chunked",
+		"/health",
+		"/net_info",
+		"/num_unconfirmed_txs",
+		"/status",
+		"/subscribe",
+		"/unsubscribe",
+		"/unsubscribe_all",
+		"/websocket":
 		node = config.GetNodebyHeight(0)
 		if node == nil {
 			http.Error(w, "Node not found", http.StatusNotFound)
@@ -95,13 +120,14 @@ func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		httpUtils.FowardRequest(w, r, node.RPC)
 		return
+
 	case "/abci_query",
-		 "/block",
-		 "/block_results",
-		 "/commit",
-		 "/consensus_params",
-		 "/header",
-		 "/validators":
+		"/block",
+		"/block_results",
+		"/commit",
+		"/consensus_params",
+		"/header",
+		"/validators":
 		height := r.URL.Query().Get("height")
 		if height != "" {
 			h, err := strconv.ParseUint(height, 10, 64)
@@ -109,7 +135,6 @@ func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Invalid height", http.StatusBadRequest)
 				return
 			}
-	
 			node = config.GetNodebyHeight(h)
 			if node == nil {
 				http.Error(w, "Node not found", http.StatusNotFound)
@@ -126,9 +151,9 @@ func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				fmt.Println("Node: ", node.RPC)
 			}
 		}
-	
 		httpUtils.FowardRequest(w, r, node.RPC)
 		return
+
 	case "blockchain":
 		height := r.URL.Query().Get("maxHeight")
 		if height != "" {
@@ -137,7 +162,6 @@ func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Invalid height", http.StatusBadRequest)
 				return
 			}
-	
 			node = config.GetNodebyHeight(h)
 			if node == nil {
 				http.Error(w, "Node not found", http.StatusNotFound)
@@ -154,15 +178,15 @@ func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				fmt.Println("Node: ", node.RPC)
 			}
 		}
-	
 		httpUtils.FowardRequest(w, r, node.RPC)
 		return
+
 	case "/block_by_hash",
-		 "/block_search",
-		 "/check_tx",
-		 "/header_by_hash",
-		 "/tx",
-		 "/tx_search":
+		"/block_search",
+		"/check_tx",
+		"/header_by_hash",
+		"/tx",
+		"/tx_search":
 		var success bool
 		RPC_nodes := config.GetNodesByType("rpc")
 		for _, node := range RPC_nodes {
@@ -175,6 +199,7 @@ func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid request", http.StatusInternalServerError)
 		}
 		return
+
 	default:
 		http.Error(w, "Invalid path", http.StatusNotFound)
 		return

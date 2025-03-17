@@ -12,7 +12,10 @@ import (
 	"github.com/decentrio/gateway/config"
 )
 
-var mu sync.Mutex
+var (
+	mu sync.Mutex
+	wg sync.WaitGroup
+)
 
 type Server struct {
 	Port uint16
@@ -89,7 +92,7 @@ func (g *Gateway) Shutdown() {
 		&g.RPC_Server, &g.GRPC_Server, &g.API_Server, &g.JSON_RPC_Server, &g.JSON_RPC_WS_Server,
 	}
 
-	fmt.Println("\nShutting down servers...")
+	fmt.Println("Shutting down servers...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -112,7 +115,7 @@ func shutdownWithTimeout(ctx context.Context, server *Server) error {
 	done := make(chan error, 1)
 	go func() {
 		server.Shutdown(server)
-		done <- nil             
+		done <- nil
 	}()
 
 	select {
