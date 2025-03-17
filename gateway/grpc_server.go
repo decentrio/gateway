@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 
@@ -19,15 +18,16 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type GrpcServer struct {
-	grpcServer *grpc.Server
-}
+var (
+	grpcServers = make(map[uint16]*grpc.Server)
+)
 
 func Start_GRPC_Server(server *Server) {
 	fmt.Printf("Starting gRPC server on port %d\n", server.Port)
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: false,
 	}
+
 	director := func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
 		md, ok := metadata.FromIncomingContext(ctx)
 		outCtx := metadata.NewOutgoingContext(ctx, md.Copy())
@@ -78,12 +78,24 @@ func Start_GRPC_Server(server *Server) {
 		panic(err)
 	}
 
+	mu.Lock()
+	grpcServers[server.Port] = grpcServer
+	mu.Unlock()
+
 	go func() {
 		_ = grpcServer.Serve(lis)
 	}()
 }
 
 func Shutdown_GRPC_Server(server *Server) {
-	fmt.Println("Shutting down gRPC server...")
-	os.Exit(0)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if grpcServer, ok := grpcServers[server.Port]; ok {
+		grpcServer.GracefulStop()
+		delete(grpcServers, server.Port)
+		fmt.Println("gRPC server stopped.")
+	} else {
+		fmt.Println("No active gRPC server found to shut down.")
+	}
 }

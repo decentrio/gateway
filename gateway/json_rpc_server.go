@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 // JSON-RPC request format
@@ -26,7 +28,13 @@ type JSONRPCResponse struct {
 	ID      int         `json:"id"`
 }
 
+var (
+	jsonRPCServers = make(map[uint16]*http.Server)
+)
+
 func Start_JSON_RPC_Server(server *Server) {
+	fmt.Printf("Starting JSON-RPC server on port %d\n", server.Port)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleJSONRPC)
 
@@ -35,23 +43,41 @@ func Start_JSON_RPC_Server(server *Server) {
 		Handler: mux,
 	}
 
+	mu.Lock()
+	jsonRPCServers[server.Port] = srv
+	mu.Unlock()
+
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Error starting JSON-RPC server: %v", err)
 		}
 	}()
 
-	fmt.Printf("JSON-RPC server is running on port %d\n", server.Port)
-
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	fmt.Println("\nShutting down JSON-RPC server...")
-	if err := srv.Close(); err != nil {
-		log.Fatalf("Error shutting down JSON-RPC server: %v", err)
+	Shutdown_JSON_RPC_Server(server)
+}
+
+func Shutdown_JSON_RPC_Server(server *Server) {
+	mu.Lock()
+	srv, exists := jsonRPCServers[server.Port]
+	if !exists {
+		mu.Unlock()
+		return
 	}
-	fmt.Println("JSON-RPC server stopped.")
+	delete(jsonRPCServers, server.Port)
+	mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		fmt.Printf("Error shutting down JSON-RPC server: %v\n", err)
+	} else {
+		fmt.Println("JSON-RPC server stopped.")
+	}
 }
 
 func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
@@ -77,9 +103,4 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
-}
-
-func Shutdown_JSON_RPC_Server(server *Server) {
-	fmt.Println("Shutting down server")
-	os.Exit(0)
 }

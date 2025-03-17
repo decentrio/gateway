@@ -1,13 +1,18 @@
 package gateway
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/decentrio/gateway/config"
 )
+
+var mu sync.Mutex
 
 type Server struct {
 	Port uint16
@@ -79,10 +84,41 @@ func (g *Gateway) Start() {
 }
 
 func (g *Gateway) Shutdown() {
-	g.RPC_Server.Shutdown(&g.RPC_Server)
-	g.GRPC_Server.Shutdown(&g.GRPC_Server)
-	g.API_Server.Shutdown(&g.API_Server)
-	g.JSON_RPC_Server.Shutdown(&g.JSON_RPC_Server)
-	g.JSON_RPC_WS_Server.Shutdown(&g.JSON_RPC_WS_Server)
-	fmt.Println("Gateway stopped.")
+	var wg sync.WaitGroup
+	servers := []*Server{
+		&g.RPC_Server, &g.GRPC_Server, &g.API_Server, &g.JSON_RPC_Server, &g.JSON_RPC_WS_Server,
+	}
+
+	fmt.Println("\nShutting down servers...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for _, server := range servers {
+		wg.Add(1)
+		go func(s *Server) {
+			defer wg.Done()
+			if err := shutdownWithTimeout(ctx, s); err != nil {
+				fmt.Printf("Error shutting down %T: %v\n", s, err)
+			}
+		}(server)
+	}
+
+	wg.Wait()
+	fmt.Println("All servers stopped.")
+}
+
+func shutdownWithTimeout(ctx context.Context, server *Server) error {
+	done := make(chan error, 1)
+	go func() {
+		server.Shutdown(server)
+		done <- nil             
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return fmt.Errorf("shutdown timeout")
+	}
 }

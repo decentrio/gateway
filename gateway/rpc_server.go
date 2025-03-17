@@ -8,9 +8,14 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
-	"github.com/decentrio/gateway/httpUtils"
 	"github.com/decentrio/gateway/config"
+	"github.com/decentrio/gateway/httpUtils"
+)
+
+var (
+	rpcServers = make(map[uint16]*http.Server)
 )
 
 func Start_RPC_Server(server *Server) {
@@ -24,22 +29,40 @@ func Start_RPC_Server(server *Server) {
 		Handler: mux,
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
-		fmt.Printf("Failed to start RPC server: %v\n", err)
-	}
+	mu.Lock()
+	rpcServers[server.Port] = srv
+	mu.Unlock()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
+	go func() {
+		<-stop
+		Shutdown_RPC_Server(server)
+	}()
 
-	fmt.Println("\nShutting down RPC server ...")
-	srv.Shutdown(context.Background())
-	fmt.Println("RPC server stopped.")
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Printf("Failed to start RPC server: %v\n", err)
+	}
 }
 
 func Shutdown_RPC_Server(server *Server) {
-	fmt.Println("Shutting down RPC server ...")
-	os.Exit(0)
+	mu.Lock()
+	srv, exists := rpcServers[server.Port]
+	if !exists {
+		mu.Unlock()
+		return
+	}
+	delete(rpcServers, server.Port)
+	mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		fmt.Printf("Error shutting down RPC server: %v\n", err)
+	} else {
+		fmt.Println("RPC server stopped.")
+	}
 }
 
 func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {

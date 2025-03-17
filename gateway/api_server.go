@@ -1,14 +1,19 @@
 package gateway
 
 import (
+	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/decentrio/gateway/config"
 	"github.com/decentrio/gateway/httpUtils"
+)
+
+var (
+	apiServers = make(map[uint16]*http.Server)
 )
 
 func Start_API_Server(server *Server) {
@@ -22,14 +27,34 @@ func Start_API_Server(server *Server) {
 		Handler: mux,
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
+	mu.Lock()
+	apiServers[server.Port] = srv
+	mu.Unlock()
+
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Printf("Error starting API server: %v\n", err)
 	}
 }
 
 func Shutdown_API_Server(server *Server) {
-	fmt.Println("Shutting down API server")
-	os.Exit(0)
+	mu.Lock()
+	srv, exists := apiServers[server.Port]
+	if !exists {
+		mu.Unlock()
+		fmt.Println("API server is not running.")
+		return
+	}
+	delete(apiServers, server.Port)
+	mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		fmt.Printf("Error shutting down API server: %v\n", err)
+	} else {
+		fmt.Println("API server stopped.")
+	}
 }
 
 func (server *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,18 +9,24 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		log.Printf("WebSocket request from: %s", r.Host)
-		return true
-	},
-}
+var (
+	jsonRPCWSServers = make(map[uint16]*http.Server)
+	upgrader         = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			log.Printf("WebSocket request from: %s", r.Host)
+			return true
+		},
+	}
+)
 
 func Start_JSON_RPC_WS_Server(server *Server) {
+	fmt.Printf("Starting JSON-RPC WebSocket server on port %d\n", server.Port)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/websocket", handleWebSocket)
 
@@ -28,23 +35,41 @@ func Start_JSON_RPC_WS_Server(server *Server) {
 		Handler: mux,
 	}
 
+	mu.Lock()
+	jsonRPCWSServers[server.Port] = srv
+	mu.Unlock()
+
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Error starting JSON-RPC WebSocket server: %v", err)
 		}
 	}()
 
-	fmt.Printf("JSON-RPC WebSocket server is running on port %d\n", server.Port)
-
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	fmt.Println("\nShutting down JSON-RPC WebSocket server...")
-	if err := srv.Close(); err != nil {
-		log.Fatalf("Error shutting down JSON-RPC WebSocket server: %v", err)
+	Shutdown_JSON_RPC_WS_Server(server)
+}
+
+func Shutdown_JSON_RPC_WS_Server(server *Server) {
+	mu.Lock()
+	srv, exists := jsonRPCWSServers[server.Port]
+	if !exists {
+		mu.Unlock()
+		return
 	}
-	fmt.Println("JSON-RPC WebSocket server stopped.")
+	delete(jsonRPCWSServers, server.Port)
+	mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		fmt.Printf("Error shutting down JSON-RPC WebSocket server: %v\n", err)
+	} else {
+		fmt.Println("JSON-RPC WebSocket server stopped.")
+	}
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +86,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			// Nếu client đóng kết nối, chỉ log mà không gửi close message
 			if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure, 1005) {
 				log.Printf("WebSocket closed by client: %v", err)
 			} else {
@@ -93,9 +117,4 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-}
-
-func Shutdown_JSON_RPC_WS_Server(server *Server) {
-	fmt.Println("Shutting down WebSocket server")
-	os.Exit(0)
 }
