@@ -55,9 +55,15 @@ func Start_RPC_Server(server *Server) {
 		Shutdown_RPC_Server(server)
 	}()
 
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		fmt.Printf("Failed to start RPC server: %v\n", err)
-	}
+	if server.Port == 443 {
+        if err := srv.ListenAndServeTLS("server.crt", "server.key"); err != nil && err != http.ErrServerClosed {
+            fmt.Printf("Error starting RPC server with TLS: %v\n", err)
+        }
+    } else {
+        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            fmt.Printf("Error starting RPC server: %v\n", err)
+        }
+    }
 }
 
 func Shutdown_RPC_Server(server *Server) {
