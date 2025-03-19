@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
-	"slices"
 
 	"github.com/decentrio/gateway/config"
 	"github.com/decentrio/gateway/utils"
 )
 
 var (
-	apiServers   = make(map[uint16]*http.Server)
-	activeAPIRequestCount int32 
+	apiServers            = make(map[uint16]*http.Server)
+	activeAPIRequestCount int32
 )
 
 func Start_API_Server(server *Server) {
@@ -34,8 +34,14 @@ func Start_API_Server(server *Server) {
 	apiServers[server.Port] = srv
 	mu.Unlock()
 
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		fmt.Printf("Error starting API server: %v\n", err)
+	if server.Port == 443 {
+		if err := srv.ListenAndServeTLS("server.crt", "server.key"); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("Error starting API server with TLS: %v\n", err)
+		}
+	} else {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("Error starting API server: %v\n", err)
+		}
 	}
 }
 
@@ -75,11 +81,11 @@ func Shutdown_API_Server(server *Server) {
 }
 
 func (server *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {
-	atomic.AddInt32(&activeAPIRequestCount, 1) 
+	atomic.AddInt32(&activeAPIRequestCount, 1)
 	wg.Add(1)
 	defer func() {
 		wg.Done()
-		atomic.AddInt32(&activeAPIRequestCount, -1) 
+		atomic.AddInt32(&activeAPIRequestCount, -1)
 	}()
 
 	fmt.Printf("Received API query: %s\n", r.URL.Path)
