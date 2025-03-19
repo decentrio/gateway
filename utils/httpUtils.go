@@ -1,8 +1,6 @@
 package httpUtils
 
 import (
-	// "io"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -20,7 +18,6 @@ func FowardRequest(w http.ResponseWriter, r *http.Request, destination string) {
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host
 		req.Host = target.Host
-		log.Printf("Forwarding request: %s %s", req.Method, req.URL.String())
 	}
 
 	proxy.ServeHTTP(w, r)

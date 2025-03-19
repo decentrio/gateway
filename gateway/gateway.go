@@ -46,25 +46,45 @@ func NewServer(cfg *config.Config, serverType string) Server {
 	new_server := &Server{}
 	switch serverType {
 	case "rpc":
-		new_server.Port = cfg.Ports.RPC
-		new_server.Start = Start_RPC_Server
-		new_server.Shutdown = Shutdown_RPC_Server
+		if cfg.Ports.RPC != 0 {
+			new_server.Port = cfg.Ports.RPC
+			new_server.Start = Start_RPC_Server
+			new_server.Shutdown = Shutdown_RPC_Server
+		} else {
+			fmt.Println("RPC Service is disabled.")
+		}
 	case "grpc":
-		new_server.Port = cfg.Ports.GRPC
-		new_server.Start = Start_GRPC_Server
-		new_server.Shutdown = Shutdown_GRPC_Server
+		if cfg.Ports.GRPC != 0 {
+			new_server.Port = cfg.Ports.GRPC
+			new_server.Start = Start_GRPC_Server
+			new_server.Shutdown = Shutdown_GRPC_Server
+		} else {
+			fmt.Println("gRPC Service is disabled.")
+		}
 	case "api":
-		new_server.Port = cfg.Ports.API
-		new_server.Start = Start_API_Server
-		new_server.Shutdown = Shutdown_API_Server
+		if cfg.Ports.API != 0 {
+			new_server.Port = cfg.Ports.API
+			new_server.Start = Start_API_Server
+			new_server.Shutdown = Shutdown_API_Server
+		} else {
+			fmt.Println("API Service is disabled.")
+		}
 	case "jsonrpc":
-		new_server.Port = cfg.Ports.JSONRPC
-		new_server.Start = Start_JSON_RPC_Server
-		new_server.Shutdown = Shutdown_JSON_RPC_Server
+		if cfg.Ports.JSONRPC != 0 {
+			new_server.Port = cfg.Ports.JSONRPC
+			new_server.Start = Start_JSON_RPC_Server
+			new_server.Shutdown = Shutdown_JSON_RPC_Server
+		} else {
+			fmt.Println("JSON-RPC Service is disabled.")
+		}
 	case "jsonrpc_ws":
-		new_server.Port = cfg.Ports.JSONRPC_WS
-		new_server.Start = Start_JSON_RPC_WS_Server
-		new_server.Shutdown = Shutdown_JSON_RPC_WS_Server
+		if cfg.Ports.JSONRPC_WS != 0 {
+			new_server.Port = cfg.Ports.JSONRPC_WS
+			new_server.Start = Start_JSON_RPC_WS_Server
+			new_server.Shutdown = Shutdown_JSON_RPC_WS_Server
+		} else {
+			fmt.Println("JSON-RPC WebSocket Service is disabled.")
+		}
 	default:
 		fmt.Println("Invalid server type")
 		os.Exit(1)
@@ -73,11 +93,21 @@ func NewServer(cfg *config.Config, serverType string) Server {
 }
 
 func (g *Gateway) Start() {
-	go g.RPC_Server.Start(&g.RPC_Server)
-	go g.GRPC_Server.Start(&g.GRPC_Server)
-	go g.API_Server.Start(&g.API_Server)
-	go g.JSON_RPC_Server.Start(&g.JSON_RPC_Server)
-	go g.JSON_RPC_WS_Server.Start(&g.JSON_RPC_WS_Server)
+	if g.RPC_Server.Port != 0 {
+		go g.RPC_Server.Start(&g.RPC_Server)
+	}
+	if g.GRPC_Server.Port != 0 {
+		go g.GRPC_Server.Start(&g.GRPC_Server)
+	}
+	if g.API_Server.Port != 0 {
+		go g.API_Server.Start(&g.API_Server)
+	}
+	if g.JSON_RPC_Server.Port != 0 {
+		go g.JSON_RPC_Server.Start(&g.JSON_RPC_Server)
+	}
+	if g.JSON_RPC_WS_Server.Port != 0 {
+		go g.JSON_RPC_WS_Server.Start(&g.JSON_RPC_WS_Server)
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -96,13 +126,15 @@ func (g *Gateway) Shutdown() {
 	defer cancel()
 
 	for _, server := range servers {
-		wg.Add(1)
-		go func(s *Server) {
-			defer wg.Done()
-			if err := shutdownWithTimeout(ctx, s); err != nil {
-				fmt.Printf("Error shutting down %T: %v\n", s, err)
-			}
-		}(server)
+		if server.Port != 0 {
+			wg.Add(1)
+			go func(s *Server) {
+				defer wg.Done()
+				if err := shutdownWithTimeout(ctx, s); err != nil {
+					fmt.Printf("Error shutting down %T: %v\n", s, err)
+				}
+			}(server)
+		}
 	}
 
 	wg.Wait()

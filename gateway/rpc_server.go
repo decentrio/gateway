@@ -7,11 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"os/signal"
 	"strconv"
 	"sync/atomic"
-	"syscall"
 	"time"
 	"github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	"github.com/decentrio/gateway/config"
@@ -47,23 +44,10 @@ func Start_RPC_Server(server *Server) {
 	mu.Lock()
 	rpcServers[server.Port] = srv
 	mu.Unlock()
-
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-stop
-		Shutdown_RPC_Server(server)
-	}()
-
-	if server.Port == 443 {
-        if err := srv.ListenAndServeTLS("server.crt", "server.key"); err != nil && err != http.ErrServerClosed {
-            fmt.Printf("Error starting RPC server with TLS: %v\n", err)
-        }
-    } else {
-        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-            fmt.Printf("Error starting RPC server: %v\n", err)
-        }
-    }
+	
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Printf("Failed to start RPC server: %v\n", err)
+	}
 }
 
 func Shutdown_RPC_Server(server *Server) {

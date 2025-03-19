@@ -19,18 +19,19 @@ upstream:
  - rpc: "http://node1:26657"
     api: "http://node1:1317"
     grpc: "node1:9090"
-    eth: "http://node1:8545"
-    ethws: "ws://node1:8546"
+    jsonrpc: "http://node1:8545"
+    jsonrpc_ws: "ws://node1:8546"
     blocks: [1000, 2000]
  -...
 
 # Gateway's custom port
+# If a port is set to 0, the service of that port won't start.
 port:
     rpc: 26657
     api: 1317
     grpc: 9090
-    eth: 8545
-    ethws: 8546
+    jsonrpc: 8545
+    jsonrpc_ws: 8546
 ```
 
 
