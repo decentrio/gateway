@@ -2,9 +2,11 @@ package gateway
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -12,13 +14,14 @@ import (
 	"github.com/mwitkow/grpc-proxy/proxy"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
 var (
-	grpcServers = make(map[uint16]*grpc.Server)
+	grpcServers            = make(map[uint16]*grpc.Server)
 	activeGRPCRequestCount int32
 )
 
@@ -32,8 +35,8 @@ func Start_GRPC_Server(server *Server) {
 		}
 
 		outCtx := metadata.NewOutgoingContext(ctx, md.Copy())
-
 		var selectedHost string
+
 		if heightStr := md.Get("x-cosmos-block-height"); len(heightStr) > 0 {
 			height, err := strconv.ParseUint(heightStr[0], 10, 64)
 			if err != nil {
@@ -54,7 +57,16 @@ func Start_GRPC_Server(server *Server) {
 		}
 
 		fmt.Printf("Forwarding request %s to node: %s\n", fullMethodName, selectedHost)
-		conn, err := grpc.DialContext(ctx, selectedHost, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+		var conn *grpc.ClientConn
+		var err error
+		if strings.HasSuffix(selectedHost, ":443") {
+			tlsConfig := &tls.Config{InsecureSkipVerify: true} 
+			conn, err = grpc.DialContext(ctx, selectedHost, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		} else {
+			conn, err = grpc.DialContext(ctx, selectedHost, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		}
+
 		if err != nil {
 			fmt.Printf("[ERROR] Failed to connect to backend %s: %v\n", selectedHost, err)
 		}
@@ -91,7 +103,7 @@ var requestInterceptor grpc.UnaryServerInterceptor = func(
 	wg.Add(1)
 	defer func() {
 		wg.Done()
-		atomic.AddInt32(&activeGRPCRequestCount, -1) 
+		atomic.AddInt32(&activeGRPCRequestCount, -1)
 	}()
 	res, err := handler(ctx, req)
 	return res, err
