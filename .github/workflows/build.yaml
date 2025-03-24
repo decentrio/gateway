@@ -23,8 +23,8 @@ jobs:
         echo "Building for tag: $TAG_NAME"
         make build
 
-    - name: Upload binary as artifact
-      uses: actions/upload-artifact@v4
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
       with:
-        name: gateway-${TAG_NAME}
-        path: ./build/gateway
+        files: ./build/gateway
