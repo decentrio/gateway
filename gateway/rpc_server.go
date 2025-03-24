@@ -356,7 +356,7 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 					// node returned a 200 response
 					fmt.Println("Node called:", url)
 					if res.Body != nil {
-						defer res.Body.Close()
+						res.Body.Close()
 					}
 
 					for key, values := range res.Header {
@@ -375,7 +375,7 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 					// node returned a 500 response
 					fmt.Println("Node called:", url)
 					if res.Body != nil {
-						defer res.Body.Close()
+						res.Body.Close()
 					}
 
 					body, err := io.ReadAll(res.Body)
