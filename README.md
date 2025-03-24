@@ -36,8 +36,9 @@ port:
 
 
 ## Endpoint Structure
-https://www.postman.com/flight-astronomer-81853429/osmosis
+API, RPC: https://www.postman.com/flight-astronomer-81853429/osmosis
 
+JSON RPC: https://documenter.getpostman.com/view/4117254/ethereum-json-rpc/RVu7CT5J
 ## Testing
 ### RPC
  - `GET` method:
