@@ -148,11 +148,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Received JSON-RPC WS request: Method=%s, Params=%v, ID=%d\n", req.Method, req.Params, req.ID)
 
 		var height uint64
-		if params, ok := req.Params.(map[string]interface{}); ok {
-			if h, ok := params["height"].(float64); ok {
-				height = uint64(h)
-			}
-		}
+		// if h, ok := req.Params["height"].(float64); ok {
+		// 	height = uint64(h)
+		// }
 
 		if height > 0 {
 			node = config.GetNodebyHeight(height)

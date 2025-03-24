@@ -28,7 +28,7 @@ upstream:
 # If a port is set to 0, the service of that port won't start.
 port:
     rpc: 26657
-    api: 1317
+    api: 0 # Disable API service
     grpc: 9090
     jsonrpc: 8545
     jsonrpc_ws: 8546
@@ -114,4 +114,17 @@ grpcurl -d '{"height": "123"}' \
 ```bash
 grpcurl -plaintext -d '{"hash": "64DFDC0F4B9096ADFC644B2DF087E7B9225C8601719C4C2BB2E979AD83081713"}' \
     localhost:5002 cosmos.tx.v1beta1.Service/GetTx
+```
+
+### JSON RPC
+```bash
+curl -X POST "http://localhost:5005" -d '{                                    
+        "jsonrpc":"2.0",
+        "method":"eth_getBlockByHash",
+        "params":[
+                "0x68f04262ea363216fae99a7498502075c6aacc42bdc4db7c29e7f64c2fab0fda", 
+                true
+        ],
+        "id":1
+}' -H "Content-Type: application/json"
 ```
