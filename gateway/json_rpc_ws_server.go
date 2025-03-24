@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -96,7 +96,7 @@ func isWebSocketAvailable(wsURL string) bool {
 	wsURL = strings.TrimPrefix(wsURL, "ws://")
 	wsURL = strings.TrimPrefix(wsURL, "wss://")
 
-	hostPort := strings.Split(wsURL, "/")[0] 
+	hostPort := strings.Split(wsURL, "/")[0]
 
 	conn, err := net.DialTimeout("tcp", hostPort, 2*time.Second)
 	if err != nil {
@@ -136,7 +136,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		fmt.Printf("Received raw message: %s\n", string(message))
+		// fmt.Printf("Received raw message: %s\n", string(message))
 
 		var req JSONRPCRequest
 		err = json.Unmarshal(message, &req)
@@ -154,6 +154,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		if node == nil {
+			if defaultNode := config.GetNodebyHeight(0); defaultNode != nil {
+				node = defaultNode
+			}
+		}
+
 		if height > 0 {
 			node = config.GetNodebyHeight(height)
 			if node == nil {
@@ -164,7 +170,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if node != nil {
-			fmt.Printf("Forwarding to Node: ", node.JSONRPC_WS)
+			fmt.Printf("Forwarding to Node: %s\n", node.JSONRPC_WS)
 
 			if !isWebSocketAvailable(node.JSONRPC_WS) {
 				log.Printf("WebSocket unavailable: %s", node.JSONRPC_WS)
@@ -172,13 +178,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
 				continue
 			}
-
 			dialURL := strings.TrimPrefix(node.JSONRPC_WS, "ws://")
 			dialURL = strings.TrimPrefix(dialURL, "wss://")
 			hostPort := strings.Split(dialURL, "/")[0] 
 
 			nodeConn, _, err := websocket.DefaultDialer.Dial("ws://"+hostPort, nil)
-
+			// nodeConn, _, err := websocket.DefaultDialer.Dial(node.JSONRPC_WS, nil)
 			if err != nil {
 				log.Printf("Failed to connect to jsonRPC WebSocket: %v", err)
 				respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":"Failed to connect to jsonRPC WebSocket","id":%d}`, req.ID)
@@ -186,6 +191,28 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			defer nodeConn.Close()
+
+			err = nodeConn.WriteMessage(websocket.TextMessage, message)
+			if err != nil {
+				log.Printf("Error forwarding message to node: %v", err)
+				continue
+			}
+
+			// fmt.Println("📩 Waiting for response from node...")
+			_, response, err := nodeConn.ReadMessage()
+			if err != nil {
+				log.Printf("Error reading response from node: %v", err)
+				respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":"Failed to read response from node","id":%d}`, req.ID)
+				conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
+				continue
+			}
+
+			fmt.Printf("Received response from node: %s\n", string(response))
+
+			err = conn.WriteMessage(websocket.TextMessage, response)
+			if err != nil {
+				log.Printf("Error sending response back to client: %v", err)
+			}
 		}
 	}
 }
