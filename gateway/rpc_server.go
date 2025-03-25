@@ -343,9 +343,19 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 			"tx",
 			"tx_search":
 			RPC_nodes := config.GetNodesByType("rpc")
+
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				res = types.RPCInvalidRequestError(req.ID, types.RPCError{})
+				json.NewEncoder(w).Encode(res)
+				return
+			}
+
 			var msg string = "" // msg to return to client
 			for _, url := range RPC_nodes {
-				res, err := httpUtils.CheckRequest(r, url)
+				new_r := r.Clone(r.Context())
+				new_r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+				res, err := httpUtils.CheckRequest(new_r, url)
 				if err != nil {
 					continue
 				}
