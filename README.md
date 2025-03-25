@@ -129,3 +129,8 @@ curl -X POST "http://localhost:5005" -d '{
         "id":1
 }' -H "Content-Type: application/json"
 ```
+
+### JSON RPC WEBSOCKET
+```bash
+echo -n '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | websocat ws://localhost:5006/websocket
+```
