@@ -10,13 +10,14 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
+
 	"github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	"github.com/decentrio/gateway/config"
-	"github.com/decentrio/gateway/utils"
+	httpUtils "github.com/decentrio/gateway/utils"
 )
 
 var (
-	rpcServers  = make(map[uint16]*http.Server)
+	rpcServers            = make(map[uint16]*http.Server)
 	activeRPCRequestCount int32
 )
 
@@ -44,7 +45,7 @@ func Start_RPC_Server(server *Server) {
 	mu.Lock()
 	rpcServers[server.Port] = srv
 	mu.Unlock()
-	
+
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Printf("Failed to start RPC server: %v\n", err)
 	}
@@ -67,7 +68,7 @@ func Shutdown_RPC_Server(server *Server) {
 
 	done := make(chan struct{})
 	go func() {
-		wg.Wait() 
+		wg.Wait()
 		close(done)
 	}()
 
@@ -85,17 +86,16 @@ func Shutdown_RPC_Server(server *Server) {
 	}
 }
 
-
 func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
-	atomic.AddInt32(&activeRPCRequestCount, 1) 
+	atomic.AddInt32(&activeRPCRequestCount, 1)
 	wg.Add(1)
 
 	defer func() {
 		wg.Done()
-		atomic.AddInt32(&activeRPCRequestCount, -1) 
+		atomic.AddInt32(&activeRPCRequestCount, -1)
 	}()
 
-	fmt.Printf("Received RPC query: %s\n", r.URL.Path)
+	// fmt.Printf("Received RPC query: %s\n", r.URL.Path)
 	var node *config.Node
 
 	switch r.URL.Path {
@@ -115,7 +115,7 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 		"/subscribe",
 		"/unsubscribe",
 		"/unsubscribe_all",
-		"/websocket", 
+		"/websocket",
 		"/":
 		node = config.GetNodebyHeight(0)
 		if node == nil {
@@ -161,7 +161,7 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 		httpUtils.FowardRequest(w, r, node.RPC)
 		return
 	case "/blockchain":
-		fmt.Print(r.URL.Query())
+		// fmt.Print(r.URL.Query())
 		var height string
 		if r.URL.Query().Has("maxheight") {
 			height = r.URL.Query().Get("maxheight")
@@ -171,7 +171,7 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 			height = "0"
 		}
 
-		fmt.Println("height" + height)
+		// fmt.Println("height" + height)
 		h, err := strconv.ParseUint(height, 10, 64)
 		if err != nil {
 			http.Error(w, "Invalid height", http.StatusBadRequest)
@@ -201,7 +201,7 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			if res == nil { 
+			if res == nil {
 				// node did not return a response
 				continue
 			} else if res.StatusCode == http.StatusOK {
@@ -216,7 +216,7 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 						w.Header().Add(key, value)
 					}
 				}
-		
+
 				w.WriteHeader(res.StatusCode)
 				_, err = io.Copy(w, res.Body)
 				if err != nil {
@@ -262,7 +262,7 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 	}
 
 	r.Body = io.NopCloser(bytes.NewReader(body))
-    r.ContentLength = int64(len(body))
+	r.ContentLength = int64(len(body))
 
 	err = req.UnmarshalJSON(body)
 	if err != nil {
@@ -273,153 +273,58 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 
 	fmt.Printf("Method: %s, Params: %s\n", req.Method, req.Params)
 
-	var params map[string]interface{} 
+	var params map[string]interface{}
 	err = json.Unmarshal(req.Params, &params)
 	if err != nil {
 		res = types.RPCInvalidParamsError(req.ID, err)
 		json.NewEncoder(w).Encode(res)
 		return
 	}
-	fmt.Println(params)
 
-	if height, found := params["height"].(string); found{
-		// handle requests that have height parameter
-		if height == "" {
-			height = "0"
-		}
-		h, err := strconv.ParseUint(height, 10, 64)
-		if err != nil {
-			res = types.RPCInvalidParamsError(req.ID, err)
-			json.NewEncoder(w).Encode(res)
-			return
-		}
+	// fmt.Println(params)
 
-		fmt.Printf("Height: %d\n", h)
-
-		node := config.GetNodebyHeight(h)
-		if node == nil {
-			res = types.RPCMethodNotFoundError(req.ID)
-			json.NewEncoder(w).Encode(res)
-			return
-		}
-		fmt.Println("Node called:", node.RPC)
-		r.ContentLength = int64(len(body))
-		httpUtils.FowardRequest(w, r, node.RPC)
+	h, err := extractHeight(params)
+	if err != nil {
+		res = types.RPCInvalidParamsError(req.ID, err)
+		json.NewEncoder(w).Encode(res)
 		return
-	} else {
-		switch req.Method {
-		case "block", 
-			"abci_info",
-			"broadcast_evidence",
-			"broadcast_tx_async",
-			"broadcast_tx_commit",
-			"broadcast_tx_sync",
-			"consensus_state",
-			"dump_consensus_state",
-			"genesis",
-			"genesis_chunked",
-			"health",
-			"net_info",
-			"num_unconfirmed_txs",
-			"status",
-			"subscribe",
-			"unsubscribe",
-			"unsubscribe_all":
-			// cases that should return latest node
-			node := config.GetNodebyHeight(0)
-			if node == nil {
-				res = types.RPCMethodNotFoundError(req.ID)
-				json.NewEncoder(w).Encode(res)
-				return
-			}
-			fmt.Println("Node called:", node.RPC)
-			r.ContentLength = int64(len(body))
-			httpUtils.FowardRequest(w, r, node.RPC)
-			return
-		case "block_by_hash",
-			"block_search",
-			"check_tx",
-			"header_by_hash",
-			"tx",
-			"tx_search":
-			RPC_nodes := config.GetNodesByType("rpc")
-			var msg string = "" // msg to return to client
-			for _, url := range RPC_nodes {
-				res, err := httpUtils.CheckRequest(r, url)
-				if err != nil {
-					continue
-				}
-				if res == nil { 
-					// node did not return a response
-					continue
-				} else if res.StatusCode == http.StatusOK {
-					// node returned a 200 response
-					fmt.Println("Node called:", url)
-					if res.Body != nil {
-						res.Body.Close()
-					}
+	}
 
-					for key, values := range res.Header {
-						for _, value := range values {
-							w.Header().Add(key, value)
-						}
-					}
-			
-					w.WriteHeader(res.StatusCode)
-					_, err = io.Copy(w, res.Body)
-					if err != nil {
-						return
-					}
-					break
-				} else if res.StatusCode == http.StatusInternalServerError {
-					// node returned a 500 response
-					fmt.Println("Node called:", url)
-					if res.Body != nil {
-						res.Body.Close()
-					}
+	if req.Method == "status" || req.Method == "health" {
+		h = 0
+	}
 
-					body, err := io.ReadAll(res.Body)
-					if err != nil {
-						return
-					}
-					msg = string(body)
-					continue
+	node := config.GetNodebyHeight(h)
+	if node == nil {
+		res = types.RPCMethodNotFoundError(req.ID)
+		json.NewEncoder(w).Encode(res)
+		return
+	}
+
+	fmt.Printf("Forwarding request to node: %s\n", node.RPC)
+
+	r.ContentLength = int64(len(body))
+	httpUtils.FowardRequest(w, r, node.RPC)
+}
+
+func extractHeight(params map[string]interface{}) (uint64, error) {
+	if heightRaw, found := params["height"]; found {
+		switch height := heightRaw.(type) {
+		case string:
+			if height != "" {
+				return strconv.ParseUint(height, 10, 64)
+			}
+		case []interface{}:
+			if len(height) > 0 {
+				if strHeight, ok := height[0].(string); ok && strHeight != "" {
+					return strconv.ParseUint(strHeight, 10, 64)
 				}
 			}
-			if msg != "" {
-				// all nodes returned same 500 response (?)
-				http.Error(w, msg, http.StatusInternalServerError)
+		case map[string]interface{}:
+			if value, exists := height["value"].(string); exists && value != "" {
+				return strconv.ParseUint(value, 10, 64)
 			}
-			return
-		case "blockchain":
-			if height, found := params["maxHeight"].(string); found{
-				if height == "" {
-					height = "0"
-				}
-				h, err := strconv.ParseUint(height, 10, 64)
-				if err != nil {
-					res = types.RPCInvalidParamsError(req.ID, err)
-					json.NewEncoder(w).Encode(res)
-					return
-				}
-		
-				fmt.Printf("Height: %d\n", h)
-		
-				node := config.GetNodebyHeight(h)
-				if node == nil {
-					res = types.RPCMethodNotFoundError(req.ID)
-					json.NewEncoder(w).Encode(res)
-					return
-				}
-				fmt.Println("Node called:", node.RPC)
-				r.ContentLength = int64(len(body))
-				httpUtils.FowardRequest(w, r, node.RPC)
-				return
-			} 
-		default:
-			res = types.RPCInvalidRequestError(req.ID, types.RPCError{})
-			json.NewEncoder(w).Encode(res)
-			return
 		}
 	}
+	return 0, nil
 }
