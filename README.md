@@ -119,7 +119,7 @@ grpcurl -plaintext -d '{"hash": "64DFDC0F4B9096ADFC644B2DF087E7B9225C8601719C4C2
 
 ### JSON RPC
 ```bash
-curl -X POST "http://localhost:5005" -d '{                                    
+curl -X POST "https://gw-jr.rpc.decentrio.ventures" -d '{                                    
         "jsonrpc":"2.0",
         "method":"eth_getBlockByHash",
         "params":[
@@ -128,4 +128,9 @@ curl -X POST "http://localhost:5005" -d '{
         ],
         "id":1
 }' -H "Content-Type: application/json"
+```
+
+### JSON RPC WEBSOCKET
+```bash
+echo -n '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | websocat ws://localhost:5006/websocket
 ```

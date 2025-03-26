@@ -300,7 +300,7 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 		json.NewEncoder(w).Encode(res)
 		return
 	}
-
+  
 	fmt.Printf("Forwarding request to node: %s\n", node.RPC)
 
 	r.ContentLength = int64(len(body))
