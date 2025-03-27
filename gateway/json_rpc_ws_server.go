@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -136,8 +137,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		// fmt.Printf("Received raw message: %s\n", string(message))
-
 		var req JSONRPCRequest
 		err = json.Unmarshal(message, &req)
 		if err != nil {
@@ -147,11 +146,27 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		fmt.Printf("Received JSON-RPC WS request: Method=%s, Params=%v, ID=%d\n", req.Method, req.Params, req.ID)
 
-		var height uint64
-		// if h, ok := req.Params["height"].(float64); ok {
-		// 	height = uint64(h)
-		// }
+		paramsMap := make([]any, len(req.Params))
+		json.Unmarshal(req.Params, &paramsMap)
+		var height uint64 = math.MaxUint64
 
+		switch req.Method {
+		case "eth_getBalance", "eth_getTransactionCount", "eth_getCode", "eth_call":
+			height, err = getHeightFromParams(paramsMap, 1)
+		case "eth_getStorageAt":
+			height, err = getHeightFromParams(paramsMap, 2)
+		case "eth_getBlockTransactionCountByNumber", "eth_getBlockByNumber", "eth_getTransactionByBlockNumberAndIndex", "eth_getUncleByBlockNumberAndIndex":
+			height, err = getHeightFromParams(paramsMap, 0)
+		default:
+			height = 0
+		}
+
+		if err != nil {
+			respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":"%s","id":%d}`, err.Error(), req.ID)
+			conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
+			continue
+		}
+		fmt.Printf("Height: %d\n", height)
 		if node == nil {
 			if defaultNode := config.GetNodebyHeight(0); defaultNode != nil {
 				node = defaultNode
@@ -205,7 +220,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			fmt.Printf("Received response from node: %s\n", string(response))
+			// fmt.Printf("Received response from node: %s\n", string(response))
 
 			err = conn.WriteMessage(websocket.TextMessage, response)
 			if err != nil {
