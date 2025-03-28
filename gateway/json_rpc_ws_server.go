@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -151,11 +152,26 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		var height uint64 = math.MaxUint64
 
 		switch req.Method {
+		case "eth_getTransactionByHash", // tx hash in params
+			"eth_getTransactionReceipt",
+			"eth_getBlockByHash", // block hash in params
+			"eth_getBlockTransactionCountByHash",
+			"eth_getTransactionByBlockHashAndIndex",
+			"eth_getUncleByBlockHashAndIndex":
+			checkRequestManuallyWebSocket(conn, req)
+			continue
+
+		case "eth_newFilter", "eth_getLogs":
+			respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":"Method not supported yet","id":%d}`, req.ID)
+			conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
+			continue
+
 		case "eth_getBalance", "eth_getTransactionCount", "eth_getCode", "eth_call":
 			height, err = getHeightFromParams(paramsMap, 1)
 		case "eth_getStorageAt":
 			height, err = getHeightFromParams(paramsMap, 2)
-		case "eth_getBlockTransactionCountByNumber", "eth_getBlockByNumber", "eth_getTransactionByBlockNumberAndIndex", "eth_getUncleByBlockNumberAndIndex":
+		case "eth_getBlockTransactionCountByNumber", "eth_getBlockByNumber",
+			"eth_getTransactionByBlockNumberAndIndex", "eth_getUncleByBlockNumberAndIndex":
 			height, err = getHeightFromParams(paramsMap, 0)
 		default:
 			height = 0
@@ -166,7 +182,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
 			continue
 		}
-		fmt.Printf("Height: %d\n", height)
 		if node == nil {
 			if defaultNode := config.GetNodebyHeight(0); defaultNode != nil {
 				node = defaultNode
@@ -181,6 +196,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
+		fmt.Printf("Height: %d\n", height)
 
 		if node != nil {
 			fmt.Printf("Forwarding to Node: %s\n", node.JSONRPC_WS)
@@ -210,8 +226,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Error forwarding message to node: %v", err)
 				continue
 			}
-
-			// fmt.Println("📩 Waiting for response from node...")
+			
 			_, response, err := nodeConn.ReadMessage()
 			if err != nil {
 				log.Printf("Error reading response from node: %v", err)
@@ -229,3 +244,73 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+func checkRequestManuallyWebSocket(conn *websocket.Conn, request JSONRPCRequest) {
+	ETH_nodes := config.GetNodesByType("jsonrpc_ws") 
+	var wg sync.WaitGroup
+	var once sync.Once
+	responseChan := make(chan map[string]interface{}, 1) 
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for _, url := range ETH_nodes {
+		wg.Add(1)
+		go func(nodeURL string) {
+			defer wg.Done()
+
+			ws, _, err := websocket.DefaultDialer.Dial(nodeURL, nil)
+			if err != nil {
+				log.Printf("Failed to connect to node %s: %v", nodeURL, err)
+				return
+			}
+			defer ws.Close()
+
+			err = ws.WriteJSON(request)
+			if err != nil {
+				log.Printf("Failed to send request to node %s: %v", nodeURL, err)
+				return
+			}
+
+			var res map[string]interface{}
+			err = ws.ReadJSON(&res)
+			if err != nil {
+				log.Printf("Failed to read response from node %s: %v", nodeURL, err)
+				return
+			}
+
+			if _, ok := res["result"]; ok || res["error"] != nil {
+				res["node_url"] = nodeURL 
+				once.Do(func() { responseChan <- res })
+			}
+		}(url)
+	}
+
+	go func() {
+		wg.Wait()
+		close(responseChan)
+	}()
+
+	var bestResponse map[string]interface{}
+	select {
+	case bestResponse = <-responseChan:
+		fmt.Println("Node called:", bestResponse["node_url"])
+	case <-ctx.Done():
+		log.Println("Timeout: No valid response from nodes")
+		bestResponse = map[string]interface{}{
+			"jsonrpc": "2.0",
+			"id":      request.ID,
+			"error": map[string]interface{}{
+				"code":    -32000,
+				"message": "No valid response from nodes",
+			},
+			"node_url": "none",
+		}
+	}
+
+	err := conn.WriteJSON(bestResponse)
+	if err != nil {
+		log.Println("Failed to send response to client:", err)
+	}
+}
+
