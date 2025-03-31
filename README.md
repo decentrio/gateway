@@ -1,6 +1,6 @@
 # Gateway
 
-A gateway server for multiple Cosmos nodes. Redirects requests to the corresponding nodes based on block height.
+A gateway server for multiple cosmos nodes. Redirect requests to the corresponding nodes by height.
 
 ## Start the Gateway
 
@@ -8,14 +8,16 @@ A gateway server for multiple Cosmos nodes. Redirects requests to the correspond
 gateway start --config config.yaml
 ```
 
-## Configuration File (config.yaml)
+## Config file syntax:
 
 ```yaml
-# Block range definition for node types:
-# - [1, 1000]: Subnode with a specified block range.
-# - [1, 0]: Subnode with a specified range up to the latest block (for queries without a specific block height).
+# config.yaml
 
-# List of subnodes with endpoints and block ranges.
+#  block range will define type of nodes:
+#  - [1, 1000]: Subnode with specified block range
+#  - [1, 0]: Subnode with specified block range to the latest block (for querying without specifying block height)
+
+#  List of sub nodes, with endpoints and port ranges.
 upstream:
   - rpc: "http://node1:26657"
     api: "http://node1:1317"
@@ -25,8 +27,8 @@ upstream:
     blocks: [1000, 2000]
   - ...
 
-# Custom ports for the gateway.
-# Setting a port to 0 disables the corresponding service.
+# Gateway's custom port
+# If a port is set to 0, the service of that port won't start.
 port:
     rpc: 26657
     api: 0  # Disable API service
@@ -35,7 +37,7 @@ port:
     jsonrpc_ws: 8546
 ```
 
-## API Endpoints
+## Endpoint Structure
 
 - API, RPC: [Postman Collection](https://www.postman.com/flight-astronomer-81853429/osmosis)
 - JSON RPC: [Ethereum JSON-RPC Documentation](https://documenter.getpostman.com/view/4117254/ethereum-json-rpc/RVu7CT5J)
