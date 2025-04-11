@@ -8,43 +8,43 @@ import (
 )
 
 type Node struct {
-	RPC  string `yaml:"rpc"`
-	API   string `yaml:"api"`
-	GRPC  string `yaml:"grpc"`
-	JSONRPC string `yaml:"jsonrpc"`
-	JSONRPC_WS string `yaml:"jsonrpc_ws"`
-	Blocks []uint64 `yaml:"blocks"`
+	RPC        string   `yaml:"rpc"`
+	API        string   `yaml:"api"`
+	GRPC       string   `yaml:"grpc"`
+	JSONRPC    string   `yaml:"jsonrpc"`
+	JSONRPC_WS string   `yaml:"jsonrpc_ws"`
+	Blocks     []uint64 `yaml:"blocks"`
 }
 
 type Ports struct {
-	RPC  uint16 `yaml:"rpc"`
-	GRPC uint16 `yaml:"grpc"`
-	API  uint16 `yaml:"api"`
-	JSONRPC uint16 `yaml:"jsonrpc"`
+	RPC        uint16 `yaml:"rpc"`
+	GRPC       uint16 `yaml:"grpc"`
+	API        uint16 `yaml:"api"`
+	JSONRPC    uint16 `yaml:"jsonrpc"`
 	JSONRPC_WS uint16 `yaml:"jsonrpc_ws"`
 }
 
 type Config struct {
 	Upstream []Node `yaml:"upstream"`
-	Ports    Ports      `yaml:"ports"`
+	Ports    Ports  `yaml:"ports"`
 }
 
 var DefaultConfig = Config{
 	Upstream: []Node{
 		{
-			RPC:  "http://localhost:26657",
-			API:  "http://localhost:1317",
-			GRPC: "localhost:9090",
-			JSONRPC: "http://localhost:8545",
+			RPC:        "http://localhost:26657",
+			API:        "http://localhost:1317",
+			GRPC:       "localhost:9090",
+			JSONRPC:    "http://localhost:8545",
 			JSONRPC_WS: "http://localhost:8546/websocket",
-			Blocks: []uint64{1, 1000},
+			Blocks:     []uint64{1, 1000},
 		},
 	},
 	Ports: Ports{
-		RPC: 26657,
-		GRPC: 9090,
-		API:  1317,
-		JSONRPC: 8545,
+		RPC:        26657,
+		GRPC:       9090,
+		API:        1317,
+		JSONRPC:    8545,
 		JSONRPC_WS: 8546,
 	},
 }
@@ -75,8 +75,8 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 
 	for i, node := range config.Upstream {
-		if len(node.Blocks) != 2 {
-			return nil, fmt.Errorf("invalid blocks range for node %d", i + 1)
+		if len(node.Blocks) > 2 {
+			return nil, fmt.Errorf("invalid blocks range for node %d", i+1)
 		}
 	}
 
@@ -92,21 +92,36 @@ func SetConfig(config *Config) {
 }
 
 func GetNodebyHeight(height uint64) *Node {
-	for _, node := range cfg.Upstream {
-		if height == 0 {  // latest height
-			if node.Blocks[1] == 0 { // get latest node as default
-				return &node
-			}
-		} else {
-			if node.Blocks[1] != 0 {
-				if height >= node.Blocks[0] && height <= node.Blocks[1] {
-					return &node
-				}
-			} else if height >= node.Blocks[0] {
+	if height == 0 {
+		fmt.Println("query node for height 0")
+		for _, node := range cfg.Upstream {
+			if len(node.Blocks) == 1 || node.Blocks[1] == 0 {
 				return &node
 			}
 		}
-	} 
+	} else {
+		fmt.Println("query node for height ", height)
+		var potential_node *Node = nil
+		for _, node := range cfg.Upstream {
+			if len(node.Blocks) == 2 {
+				if node.Blocks[1] != 0 {
+					if height >= node.Blocks[0] && height <= node.Blocks[1] {
+						return &node
+					}
+				} else {
+					potential_node = &node
+					if height >= node.Blocks[0] {
+						return &node
+					}
+				}
+			} else {
+				potential_node = &node
+			}
+		}
+
+		return potential_node
+	}
+
 	return nil
 }
 

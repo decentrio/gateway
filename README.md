@@ -13,6 +13,7 @@ Config file syntax:
 #  block range will define type of nodes:
 #  - [1, 1000]: Subnode with specified block range
 #  - [1, 0]: Subnode with specified block range to the latest block (for querying without specifying block height)
+#  - [1000]: Subnode with a range of latest 1000 blocks 
 
 #  List of sub nodes, with endpoints and port ranges.
 upstream: 
