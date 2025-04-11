@@ -7,7 +7,7 @@ cd /root
 binary=$1
 CHAIN_ID="local_1223-1"
 
-update_genesis () {    
+update_genesis () {
     cat localnet/v1/config/genesis.json | jq "$1" > localnet/v1/config/tmp_genesis.json && mv localnet/v1/config/tmp_genesis.json localnet/v1/config/genesis.json
 }
 
