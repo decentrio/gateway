@@ -248,8 +248,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 func checkRequestManuallyWebSocket(conn *websocket.Conn, request JSONRPCRequest) {
 	ETH_nodes := config.GetNodesByType("jsonrpc_ws") 
 	var wg sync.WaitGroup
-	var once sync.Once
-	responseChan := make(chan map[string]interface{}, 1) 
+	var bestNode atomic.Value
+	responseChan := make(chan map[string]interface{}, len(ETH_nodes))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -279,9 +279,11 @@ func checkRequestManuallyWebSocket(conn *websocket.Conn, request JSONRPCRequest)
 				return
 			}
 
-			if _, ok := res["result"]; ok || res["error"] != nil {
-				res["node_url"] = nodeURL 
-				once.Do(func() { responseChan <- res })
+			if result, ok := res["result"]; ok && result != nil {
+				bestNode.Store(nodeURL)
+				responseChan <- res
+			} else {
+				log.Printf("Node %s responded but has no valid result", nodeURL)
 			}
 		}(url)
 	}
@@ -294,7 +296,9 @@ func checkRequestManuallyWebSocket(conn *websocket.Conn, request JSONRPCRequest)
 	var bestResponse map[string]interface{}
 	select {
 	case bestResponse = <-responseChan:
-		fmt.Println("Node called:", bestResponse["node_url"])
+		if nodeURL, ok := bestNode.Load().(string); ok {
+			fmt.Println("Node called:", nodeURL)
+		}
 	case <-ctx.Done():
 		log.Println("Timeout: No valid response from nodes")
 		bestResponse = map[string]interface{}{
@@ -304,13 +308,10 @@ func checkRequestManuallyWebSocket(conn *websocket.Conn, request JSONRPCRequest)
 				"code":    -32000,
 				"message": "No valid response from nodes",
 			},
-			"node_url": "none",
 		}
 	}
 
-	err := conn.WriteJSON(bestResponse)
-	if err != nil {
+	if err := conn.WriteJSON(bestResponse); err != nil {
 		log.Println("Failed to send response to client:", err)
 	}
 }
-
