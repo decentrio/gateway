@@ -102,7 +102,7 @@ func GetNodebyHeight(height uint64) *Node {
 			}
 		}
 
-		// fallback: If pruned nodes found, return [x, 0] node.
+		// fallback: If no pruned nodes found, return [x, 0] node.
 		for _, n := range cfg.Upstream {
 			if len(n.Blocks) == 2 && n.Blocks[1] == 0 {
 				return &n
