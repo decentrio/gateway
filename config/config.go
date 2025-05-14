@@ -93,33 +93,45 @@ func SetConfig(config *Config) {
 
 func GetNodebyHeight(height uint64) *Node {
 	if height == 0 {
-		fmt.Println("query node for height 0")
-		for _, node := range cfg.Upstream {
-			if len(node.Blocks) == 1 || node.Blocks[1] == 0 {
-				return &node
-			}
-		}
-	} else {
-		fmt.Println("query node for height ", height)
-		var potential_node *Node = nil
-		for _, node := range cfg.Upstream {
-			if len(node.Blocks) == 2 {
-				if node.Blocks[1] != 0 {
-					if height >= node.Blocks[0] && height <= node.Blocks[1] {
-						return &node
-					}
-				} else {
-					potential_node = &node
-					if height >= node.Blocks[0] {
-						return &node
-					}
-				}
-			} else {
-				potential_node = &node
+		fmt.Println("find node for height 0")
+
+		// prioritize [x] node
+		for _, n := range cfg.Upstream {
+			if len(n.Blocks) == 1 {
+				return &n
 			}
 		}
 
-		return potential_node
+		// fallback: If pruned nodes found, return [x, 0] node.
+		for _, n := range cfg.Upstream {
+			if len(n.Blocks) == 2 && n.Blocks[1] == 0 {
+				return &n
+			}
+		}
+	} else {
+		fmt.Println("find node for height ", height)
+
+		// prioritize [x, y] node
+		// for [x,y] nodes, if height is between x and y, return that node.
+		// for [x,0] nodes, if height is greater than x, return that node.
+		for _, n := range cfg.Upstream {
+			if len(n.Blocks) == 2 {
+				if n.Blocks[1] != 0 {
+					if height >= n.Blocks[0] && height <= n.Blocks[1] {
+						return &n
+					}
+				} else if height >= n.Blocks[0] {
+					return &n
+				}
+			}
+		}
+
+		// fallback: If no nodes found for the given height, return pruned node.
+		for _, n := range cfg.Upstream {
+			if len(n.Blocks) == 1 {
+				return &n
+			}
+		}
 	}
 
 	return nil
