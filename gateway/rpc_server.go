@@ -310,6 +310,7 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 		switch req.Method {
 		case "block", 
 			"abci_info",
+			"abci_query",
 			"broadcast_evidence",
 			"broadcast_tx_async",
 			"broadcast_tx_commit",
@@ -427,6 +428,7 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 				return
 			} 
 		default:
+			fmt.Println("Invalid method:", req.Method)
 			res = types.RPCInvalidRequestError(req.ID, types.RPCError{})
 			json.NewEncoder(w).Encode(res)
 			return
