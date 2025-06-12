@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+import "google/protobuf/struct.proto";
+
+package gateway;
+option go_package = "./proto";
+
+// Define a streaming service
+service GenericService {
+    rpc HandleStream (stream GenericRequest) returns (stream GenericResponse);
+}
+
+message GenericRequest {
+    google.protobuf.Struct body = 1; // JSON-like structure
+}
+
+message GenericResponse {
+    string message = 1;
+}
