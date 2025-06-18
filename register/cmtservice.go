@@ -9,7 +9,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
-	tmservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+	tmservice "github.com/cosmos/cosmos-sdk/client/grpc/tmservice"
 	"github.com/decentrio/gateway/config"
 	"github.com/gogo/status"
 )
