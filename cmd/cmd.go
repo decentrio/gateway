@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
-	
+
 	"github.com/decentrio/gateway/config"
 	"github.com/decentrio/gateway/gateway"
 	"github.com/spf13/cobra"
@@ -35,7 +35,7 @@ var startCmd = &cobra.Command{
 			fmt.Printf("Error loading config file: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("%+v\n", cfg)
+		// fmt.Printf("%+v\n", cfg)
 		config.SetConfig(cfg)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
@@ -45,7 +45,7 @@ var startCmd = &cobra.Command{
 			fmt.Printf("Error creating gateway: %v\n", err)
 			os.Exit(1)
 		}
-		
+
 		gw.Start()
 	},
 }
