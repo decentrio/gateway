@@ -3,6 +3,8 @@ package register
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
+
 	// "fmt"
 	"strings"
 
@@ -37,6 +39,8 @@ func (s *CustomTMService) GetBlockByHeight(ctx context.Context, req *tmservice.G
 	if node == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "No node found for height %d", req.Height)
 	}
+
+	fmt.Printf("Forwarding GetBlockByHeight request to node: %s\n", node.GRPC)
 
 	var err error
 	var conn *grpc.ClientConn
