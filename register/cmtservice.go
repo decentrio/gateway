@@ -3,7 +3,7 @@ package register
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
+	// "fmt"
 	"strings"
 
 	"google.golang.org/grpc"
@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	// "google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
+	// "google.golang.org/grpc/metadata"
 
 	tmservice "github.com/cosmos/cosmos-sdk/client/grpc/tmservice"
 	"github.com/decentrio/gateway/config"
@@ -25,12 +25,12 @@ type CustomTMService struct {
 
 func (s *CustomTMService) GetBlockByHeight(ctx context.Context, req *tmservice.GetBlockByHeightRequest) (*tmservice.GetBlockByHeightResponse, error) {
 	// Tạo metadata từ height
-	md := metadata.New(map[string]string{
-		"x-cosmos-block-height": fmt.Sprintf("%d", req.Height),
-	})
+	// md := metadata.New(map[string]string{
+	// 	"x-cosmos-block-height": fmt.Sprintf("%d", req.Height),
+	// })
 
 	// Tạo context mới có metadata
-	ctx = metadata.NewOutgoingContext(ctx, md)
+	// ctx = metadata.NewOutgoingContext(ctx, md)
 
 	// Lấy node từ config theo height
 	node := config.GetNodebyHeight(uint64(req.Height))
