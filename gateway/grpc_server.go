@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/decentrio/gateway/config"
 	"github.com/mwitkow/grpc-proxy/proxy"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -18,6 +17,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/decentrio/gateway/config"
+	"github.com/decentrio/gateway/register"
 )
 
 var (
@@ -37,7 +39,8 @@ func Start_GRPC_Server(server *Server) {
 		outCtx := metadata.NewOutgoingContext(ctx, md.Copy())
 		var selectedHost string
 
-		if heightStr := md.Get("x-cosmos-block-height"); len(heightStr) > 0 {
+		heightStr := md.Get("x-cosmos-block-height")
+		if len(heightStr) > 0 {
 			height, err := strconv.ParseUint(heightStr[0], 10, 64)
 			if err != nil {
 				fmt.Println("[ERROR] Invalid x-cosmos-block-height:", heightStr[0])
@@ -61,7 +64,7 @@ func Start_GRPC_Server(server *Server) {
 		var conn *grpc.ClientConn
 		var err error
 		if strings.HasSuffix(selectedHost, ":443") {
-			tlsConfig := &tls.Config{InsecureSkipVerify: true} 
+			tlsConfig := &tls.Config{InsecureSkipVerify: true}
 			conn, err = grpc.DialContext(ctx, selectedHost, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 		} else {
 			conn, err = grpc.DialContext(ctx, selectedHost, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -75,9 +78,12 @@ func Start_GRPC_Server(server *Server) {
 
 	grpcServer := grpc.NewServer(
 		grpc.UnknownServiceHandler(proxy.TransparentHandler(director)),
-		grpc.UnaryInterceptor(requestInterceptor),
+		grpc.ChainUnaryInterceptor(requestInterceptor),
 		grpc.StreamInterceptor(requestStreamInterceptor),
 	)
+
+	// Register service
+	register.Register(grpcServer)
 
 	lis, err := net.Listen("tcp", ":"+strconv.Itoa(int(server.Port)))
 	if err != nil {
