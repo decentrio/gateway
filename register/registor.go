@@ -3,7 +3,7 @@ package register
 import (
 	"google.golang.org/grpc"
 
-	tmservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+	tmservice "github.com/cosmos/cosmos-sdk/client/grpc/tmservice"
 )
 
 func Register(grpcServer *grpc.Server) {
