@@ -5,8 +5,8 @@ go 1.23.5
 toolchain go1.24.0
 
 require (
-	github.com/cometbft/cometbft v0.38.15
-	github.com/cosmos/cosmos-sdk v0.50.13
+	github.com/cometbft/cometbft v0.38.17
+	github.com/cosmos/cosmos-sdk v0.53.2
 	github.com/gogo/status v1.1.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/mwitkow/grpc-proxy v0.0.0-20230212185441-f345521cb9c9
@@ -25,7 +25,7 @@ require (
 	cosmossdk.io/log v1.6.0 // indirect
 	cosmossdk.io/math v1.5.3 // indirect
 	cosmossdk.io/schema v1.1.0 // indirect
-	cosmossdk.io/store v1.1.1 // indirect
+	cosmossdk.io/store v1.1.2 // indirect
 	cosmossdk.io/x/tx v0.14.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
