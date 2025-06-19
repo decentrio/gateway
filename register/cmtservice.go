@@ -49,4 +49,58 @@ func (s *CustomTMService) GetBlockByHeight(ctx context.Context, req *tmservice.G
 
 }
 
+func (s *CustomTMService) GetValidatorSetByHeight(ctx context.Context, req *tmservice.GetValidatorSetByHeightRequest) (*tmservice.GetValidatorSetByHeightResponse, error) {
+	node := config.GetNodebyHeight(uint64(req.Height))
+	if node == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "No node found for height %d", req.Height)
+	}
+
+	fmt.Printf("Forwarding GetBlockByHeight request to node: %s\n", node.GRPC)
+
+	var err error
+	var conn *grpc.ClientConn
+	if strings.HasSuffix(node.GRPC, ":443") {
+		tlsConfig := &tls.Config{InsecureSkipVerify: true}
+		conn, err = grpc.DialContext(ctx, node.GRPC, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	} else {
+		conn, err = grpc.DialContext(ctx, node.GRPC, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	client := tmservice.NewServiceClient(conn)
+	return client.GetValidatorSetByHeight(ctx, req)
+
+}
+
+func (s *CustomTMService) ABCIQuery(ctx context.Context, req *tmservice.ABCIQueryRequest) (*tmservice.ABCIQueryResponse, error) {
+	node := config.GetNodebyHeight(uint64(req.Height))
+	if node == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "No node found for height %d", req.Height)
+	}
+
+	fmt.Printf("Forwarding GetBlockByHeight request to node: %s\n", node.GRPC)
+
+	var err error
+	var conn *grpc.ClientConn
+	if strings.HasSuffix(node.GRPC, ":443") {
+		tlsConfig := &tls.Config{InsecureSkipVerify: true}
+		conn, err = grpc.DialContext(ctx, node.GRPC, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	} else {
+		conn, err = grpc.DialContext(ctx, node.GRPC, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	client := tmservice.NewServiceClient(conn)
+	return client.ABCIQuery(ctx, req)
+
+}
+
 // todo: manually add other query types if needed
