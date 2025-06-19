@@ -8,20 +8,22 @@ import (
 	// "fmt"
 	"strings"
 
+	"github.com/gogo/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	tmservice "github.com/cosmos/cosmos-sdk/client/grpc/tmservice"
+
 	"github.com/decentrio/gateway/config"
-	"github.com/gogo/status"
 )
 
 type CustomTMService struct {
 	tmservice.UnimplementedServiceServer
 }
 
+// grpcurl -plaintext -d '{"height":"12"}' localhost:5002 cosmos.base.tendermint.v1beta1.Service.GetBlockByHeight
 func (s *CustomTMService) GetBlockByHeight(ctx context.Context, req *tmservice.GetBlockByHeightRequest) (*tmservice.GetBlockByHeightResponse, error) {
 	node := config.GetNodebyHeight(uint64(req.Height))
 	if node == nil {
@@ -49,6 +51,7 @@ func (s *CustomTMService) GetBlockByHeight(ctx context.Context, req *tmservice.G
 
 }
 
+// grpcurl -plaintext -d '{"height":"12"}' localhost:5002 cosmos.base.tendermint.v1beta1.Service.GetValidatorSetByHeight
 func (s *CustomTMService) GetValidatorSetByHeight(ctx context.Context, req *tmservice.GetValidatorSetByHeightRequest) (*tmservice.GetValidatorSetByHeightResponse, error) {
 	node := config.GetNodebyHeight(uint64(req.Height))
 	if node == nil {
@@ -76,6 +79,10 @@ func (s *CustomTMService) GetValidatorSetByHeight(ctx context.Context, req *tmse
 
 }
 
+//	grpcurl -plaintext -d '{
+//		"path": "/store/bank/key",
+//		"data": "0a2d636f736d6f73316c71733763746e393578386d3930347a6766786a646b7777766638746b6c6b707936656b"
+//	  }' localhost:5002 cosmos.base.tendermint.v1beta1.Service.ABCIQuery
 func (s *CustomTMService) ABCIQuery(ctx context.Context, req *tmservice.ABCIQueryRequest) (*tmservice.ABCIQueryResponse, error) {
 	node := config.GetNodebyHeight(uint64(req.Height))
 	if node == nil {
