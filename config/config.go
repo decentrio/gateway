@@ -93,7 +93,7 @@ func SetConfig(config *Config) {
 
 func GetNodebyHeight(height uint64) *Node {
 	if height == 0 {
-		fmt.Println("find node for height 0")
+		fmt.Println("find node for height is zero")
 
 		// prioritize [x] node
 		for _, n := range cfg.Upstream {
