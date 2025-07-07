@@ -1,0 +1,27 @@
+upstream:
+- rpc: http://localhost:26657
+  api: http://localhost:1317
+  grpc: localhost:9050
+  jsonrpc: http://localhost:8545
+  jsonrpc_ws: ws://localhost:8546
+  blocks: [1, 500]
+- rpc: http://localhost:26654
+  api: http://localhost:1316
+  grpc: localhost:9088
+  jsonrpc: http://localhost:8545
+  jsonrpc_ws: ws://localhost:8546
+  blocks: [500, 1000]
+- rpc: http://localhost:26651
+  api: http://localhost:1315
+  grpc: localhost:9086
+  jsonrpc: http://localhost:8545
+  jsonrpc_ws: ws://localhost:8546
+  blocks: [1000]
+
+
+ports:
+  rpc: 5001
+  grpc: 5002
+  api: 5004
+  jsonrpc: 5005
+  jsonrpc_ws: 5006
