@@ -22,7 +22,6 @@ var initCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		config.GenerateConfig()
 		fmt.Println("Configuration file created successfully.")
-		return
 	},
 }
 

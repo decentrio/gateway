@@ -26,11 +26,12 @@ func Start_RPC_Server(server *Server) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Received RPC query: %s, method: %s\n", r.URL.Path, r.Method)
-		if r.Method == "GET" {
+		switch r.Method {
+		case "GET":
 			server.handleRPCRequest(w, r)
-		} else if r.Method == "POST" {
+		case "POST":
 			server.handleJSONRPCRequest(w, r)
-		} else {
+		default:
 			http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		}
 	},
