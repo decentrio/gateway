@@ -29,23 +29,23 @@ type JSONRPCError struct {
 
 // JSON-RPC request format
 type JSONRPCRequest struct {
-	JSONRPC string      	`json:"jsonrpc"`
-	ID      int         	`json:"id"`
-	Method  string      	`json:"method"`
+	JSONRPC string          `json:"jsonrpc"`
+	ID      int             `json:"id"`
+	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params"`
 }
 
 // JSON-RPC response format
 type JSONRPCResponse struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      int         `json:"id"`
-	Result  any 		`json:"result,omitempty"`
+	JSONRPC string        `json:"jsonrpc"`
+	ID      int           `json:"id"`
+	Result  any           `json:"result,omitempty"`
 	Error   *JSONRPCError `json:"error,omitempty"`
 }
 
 var (
-	jsonRPCServers = make(map[uint16]*http.Server)
-	activeJsonRPCRequestCount int32 
+	jsonRPCServers            = make(map[uint16]*http.Server)
+	activeJsonRPCRequestCount int32
 )
 
 func Start_JSON_RPC_Server(server *Server) {
@@ -93,7 +93,7 @@ func Shutdown_JSON_RPC_Server(server *Server) {
 
 	done := make(chan struct{})
 	go func() {
-		wg.Wait() 
+		wg.Wait()
 		close(done)
 	}()
 
@@ -113,12 +113,12 @@ func Shutdown_JSON_RPC_Server(server *Server) {
 
 func trackRequestsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&activeJsonRPCRequestCount, 1) 
-		wg.Add(1)                       
+		atomic.AddInt32(&activeJsonRPCRequestCount, 1)
+		wg.Add(1)
 
 		defer func() {
-			wg.Done()                        
-			atomic.AddInt32(&activeJsonRPCRequestCount, -1) 
+			wg.Done()
+			atomic.AddInt32(&activeJsonRPCRequestCount, -1)
 		}()
 
 		next(w, r)
@@ -150,7 +150,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
-    r.ContentLength = int64(len(body))
+	r.ContentLength = int64(len(body))
 
 	err = json.Unmarshal(body, &req)
 	if err != nil {
@@ -163,70 +163,70 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("Received JSON-RPC request: Method=%s, Params=%v\n", req.Method, req.Params)	
+	fmt.Printf("Received JSON-RPC request: Method=%s, Params=%v\n", req.Method, req.Params)
 	paramsMap := make([]any, len(req.Params))
 	json.Unmarshal(req.Params, &paramsMap)
 	var height uint64 = math.MaxUint64
 
 	switch req.Method {
-		case "eth_getTransactionByHash", // tx hash in params
-			 "eth_getTransactionReceipt",
-			 "eth_getBlockByHash", // block hash in params
-			 "eth_getBlockTransactionCountByHash",
-			 "eth_getTransactionByBlockHashAndIndex",
-			 "eth_getUncleByBlockHashAndIndex":
-			checkRequestManually(w, r)
-			return
-		case "eth_newFilter",  /// ????
-			 "eth_getLogs":
+	case "eth_getTransactionByHash", // tx hash in params
+		"eth_getTransactionReceipt",
+		"eth_getBlockByHash", // block hash in params
+		"eth_getBlockTransactionCountByHash",
+		"eth_getTransactionByBlockHashAndIndex",
+		"eth_getUncleByBlockHashAndIndex":
+		checkRequestManually(w, r)
+		return
+	case "eth_newFilter", /// ????
+		"eth_getLogs":
+		res = JSONRPCResponse{
+			JSONRPC: "2.0",
+			Error:   &JSONRPCError{Code: -32600, Message: "Method not supported yet"},
+			ID:      1,
+		}
+		json.NewEncoder(w).Encode(res)
+		return
+	case "eth_getBalance", // param 1
+		"eth_getTransactionCount",
+		"eth_getCode",
+		"eth_call":
+		height, err = getHeightFromParams(paramsMap, 1)
+		if err != nil {
 			res = JSONRPCResponse{
 				JSONRPC: "2.0",
-				Error:   &JSONRPCError{Code: -32600, Message: "Method not supported yet"},
+				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
 				ID:      1,
 			}
 			json.NewEncoder(w).Encode(res)
 			return
-		case "eth_getBalance",// param 1
-			"eth_getTransactionCount",
-			"eth_getCode",
-			"eth_call":
-			height, err = getHeightFromParams(paramsMap, 1)
-			if err != nil {
-				res = JSONRPCResponse{
-					JSONRPC: "2.0",
-					Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
-					ID:      1,
-				}
-				json.NewEncoder(w).Encode(res)
-				return
+		}
+	case "eth_getStorageAt": // param 2
+		height, err = getHeightFromParams(paramsMap, 2)
+		if err != nil {
+			res = JSONRPCResponse{
+				JSONRPC: "2.0",
+				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
+				ID:      1,
 			}
-		case "eth_getStorageAt": // param 2
-			height, err = getHeightFromParams(paramsMap, 2)
-			if err != nil {
-				res = JSONRPCResponse{
-					JSONRPC: "2.0",
-					Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
-					ID:      1,
-				}
-				json.NewEncoder(w).Encode(res)
-				return
+			json.NewEncoder(w).Encode(res)
+			return
+		}
+	case "eth_getBlockTransactionCountByNumber", // param 0
+		"eth_getBlockByNumber",
+		"eth_getTransactionByBlockNumberAndIndex",
+		"eth_getUncleByBlockNumberAndIndex":
+		height, err = getHeightFromParams(paramsMap, 0)
+		if err != nil {
+			res = JSONRPCResponse{
+				JSONRPC: "2.0",
+				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
+				ID:      1,
 			}
-		case "eth_getBlockTransactionCountByNumber", // param 0
-			"eth_getBlockByNumber", 
-			"eth_getTransactionByBlockNumberAndIndex",
-			"eth_getUncleByBlockNumberAndIndex": 
-			height, err = getHeightFromParams(paramsMap, 0)
-			if err != nil {
-				res = JSONRPCResponse{
-					JSONRPC: "2.0",
-					Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
-					ID:      1,
-				}
-				json.NewEncoder(w).Encode(res)
-				return
-			}
-		default:
-			height = 0
+			json.NewEncoder(w).Encode(res)
+			return
+		}
+	default:
+		height = 0
 	}
 
 	fmt.Printf("Height: %d\n", height)
@@ -244,7 +244,6 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Node called:", node.JSONRPC)
 	httpUtils.FowardRequest(w, r, node.JSONRPC)
 }
-
 
 func getHeightFromParams(params []any, index int) (uint64, error) {
 	if len(params) > index {
@@ -272,7 +271,6 @@ func getHeightFromParams(params []any, index int) (uint64, error) {
 	}
 }
 
-
 func checkRequestManually(w http.ResponseWriter, r *http.Request) {
 	ETH_nodes := config.GetNodesByType("jsonrpc")
 	var msg JSONRPCResponse
@@ -292,47 +290,42 @@ func checkRequestManually(w http.ResponseWriter, r *http.Request) {
 		new_r := r.Clone(r.Context())
 		new_r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		res, err := httpUtils.CheckRequest(new_r, url)
-		if err != nil {
+		if err != nil || res == nil {
 			continue
 		}
 
-		if res == nil {
-			continue
-		} else { // node always returns a 200 response
-			fmt.Println("Node called:", url)
-			if res.Body != nil {
-				body, err := io.ReadAll(res.Body)
-				if err != nil {
-					msg = JSONRPCResponse{
-						JSONRPC: "2.0",
-						Error:   &JSONRPCError{Code: -32600, Message: "Parse error. Invalid JSON: " + err.Error()},
-						ID:      1,
-					}
-					json.NewEncoder(w).Encode(msg)
-					return
+		fmt.Println("Node called:", url)
+		if res.Body != nil {
+			body, err := io.ReadAll(res.Body)
+			res.Body.Close()
+			if err != nil {
+				msg = JSONRPCResponse{
+					JSONRPC: "2.0",
+					Error:   &JSONRPCError{Code: -32600, Message: "Parse error. Invalid JSON: " + err.Error()},
+					ID:      1,
 				}
-	
-				json.Unmarshal(body, &msg)
-				defer res.Body.Close()
-			}
-
-			if msg.Error != nil || msg.Result != nil { // errors in handling request, all the nodes will return the same
 				json.NewEncoder(w).Encode(msg)
 				return
-			} else if msg.Result == nil {
-				fmt.Println("Result is empty")
-				continue
 			}
+
+			json.Unmarshal(body, &msg)
+		}
+
+		if msg.Error != nil || msg.Result != nil {
+			json.NewEncoder(w).Encode(msg)
+			return
+		} else if msg.Result == nil {
+			fmt.Println("Result is empty")
+			continue
 		}
 	}
 
-	if msg.Result == nil { // after all loop, result is still nil?
+	if msg.Result == nil {
 		nil_msg := map[string]interface{}{
 			"jsonrpc": msg.JSONRPC,
-			"id":  msg.ID,
-			"result": msg.Result,
+			"id":      msg.ID,
+			"result":  msg.Result,
 		}
 		json.NewEncoder(w).Encode(nil_msg)
-		return
 	}
 }

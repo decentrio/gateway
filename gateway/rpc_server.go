@@ -5,18 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/cometbft/cometbft/rpc/jsonrpc/types"
+	"github.com/decentrio/gateway/config"
+	"github.com/decentrio/gateway/utils"
 	"io"
 	"net/http"
 	"strconv"
 	"sync/atomic"
 	"time"
-	"github.com/cometbft/cometbft/rpc/jsonrpc/types"
-	"github.com/decentrio/gateway/config"
-	"github.com/decentrio/gateway/utils"
 )
 
 var (
-	rpcServers  = make(map[uint16]*http.Server)
+	rpcServers            = make(map[uint16]*http.Server)
 	activeRPCRequestCount int32
 )
 
@@ -44,7 +44,7 @@ func Start_RPC_Server(server *Server) {
 	mu.Lock()
 	rpcServers[server.Port] = srv
 	mu.Unlock()
-	
+
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Printf("Failed to start RPC server: %v\n", err)
 	}
@@ -67,7 +67,7 @@ func Shutdown_RPC_Server(server *Server) {
 
 	done := make(chan struct{})
 	go func() {
-		wg.Wait() 
+		wg.Wait()
 		close(done)
 	}()
 
@@ -85,14 +85,13 @@ func Shutdown_RPC_Server(server *Server) {
 	}
 }
 
-
 func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
-	atomic.AddInt32(&activeRPCRequestCount, 1) 
+	atomic.AddInt32(&activeRPCRequestCount, 1)
 	wg.Add(1)
 
 	defer func() {
 		wg.Done()
-		atomic.AddInt32(&activeRPCRequestCount, -1) 
+		atomic.AddInt32(&activeRPCRequestCount, -1)
 	}()
 
 	fmt.Printf("Received RPC query: %s\n", r.URL.Path)
@@ -115,7 +114,7 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 		"/subscribe",
 		"/unsubscribe",
 		"/unsubscribe_all",
-		"/websocket", 
+		"/websocket",
 		"/":
 		node = config.GetNodebyHeight(0)
 		if node == nil {
@@ -201,36 +200,32 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			if res == nil { 
+			if res == nil {
 				// node did not return a response
 				continue
-			} else if res.StatusCode == http.StatusOK {
+			}
+			if res.StatusCode == http.StatusOK {
 				// node returned a 200 response
 				fmt.Println("Node called:", url)
-				if res.Body != nil {
-					defer res.Body.Close()
-				}
 
 				for key, values := range res.Header {
 					for _, value := range values {
 						w.Header().Add(key, value)
 					}
 				}
-		
+
 				w.WriteHeader(res.StatusCode)
 				_, err = io.Copy(w, res.Body)
+				res.Body.Close()
 				if err != nil {
 					return
 				}
 				break
 			} else {
-				// node returned a non-200 response
 				fmt.Println("Node called:", url)
-				if res.Body != nil {
-					defer res.Body.Close()
-				}
 
 				body, err := io.ReadAll(res.Body)
+				res.Body.Close()
 				if err != nil {
 					return
 				}
@@ -262,7 +257,7 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 	}
 
 	r.Body = io.NopCloser(bytes.NewReader(body))
-    r.ContentLength = int64(len(body))
+	r.ContentLength = int64(len(body))
 
 	err = req.UnmarshalJSON(body)
 	if err != nil {
@@ -273,7 +268,7 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 
 	fmt.Printf("Method: %s, Params: %s\n", req.Method, req.Params)
 
-	var params map[string]interface{} 
+	var params map[string]interface{}
 	err = json.Unmarshal(req.Params, &params)
 	if err != nil {
 		res = types.RPCInvalidParamsError(req.ID, err)
@@ -282,7 +277,7 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 	}
 	fmt.Println(params)
 
-	if height, found := params["height"].(string); found{
+	if height, found := params["height"].(string); found {
 		// handle requests that have height parameter
 		if height == "" {
 			height = "0"
@@ -308,7 +303,7 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 		return
 	} else {
 		switch req.Method {
-		case "block", 
+		case "block",
 			"abci_info",
 			"abci_query",
 			"broadcast_evidence",
@@ -357,53 +352,47 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 				new_r := r.Clone(r.Context())
 				new_r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 				res, err := httpUtils.CheckRequest(new_r, url)
-				if err != nil {
+				if err != nil || res == nil {
 					continue
 				}
-				if res == nil { 
-					// node did not return a response
-					continue
-				} else if res.StatusCode == http.StatusOK {
-					// node returned a 200 response
+
+				if res.StatusCode == http.StatusOK {
 					fmt.Println("Node called:", url)
-					if res.Body != nil {
-						res.Body.Close()
-					}
 
 					for key, values := range res.Header {
 						for _, value := range values {
 							w.Header().Add(key, value)
 						}
 					}
-			
+
 					w.WriteHeader(res.StatusCode)
 					_, err = io.Copy(w, res.Body)
+					res.Body.Close()
 					if err != nil {
 						return
 					}
 					break
 				} else if res.StatusCode == http.StatusInternalServerError {
-					// node returned a 500 response
 					fmt.Println("Node called:", url)
-					if res.Body != nil {
-						res.Body.Close()
-					}
 
 					body, err := io.ReadAll(res.Body)
+					res.Body.Close()
 					if err != nil {
 						return
 					}
 					msg = string(body)
 					continue
+				} else {
+					res.Body.Close()
 				}
 			}
+
 			if msg != "" {
-				// all nodes returned same 500 response (?)
 				http.Error(w, msg, http.StatusInternalServerError)
 			}
 			return
 		case "blockchain":
-			if height, found := params["maxHeight"].(string); found{
+			if height, found := params["maxHeight"].(string); found {
 				if height == "" {
 					height = "0"
 				}
@@ -413,9 +402,9 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 					json.NewEncoder(w).Encode(res)
 					return
 				}
-		
+
 				fmt.Printf("Height: %d\n", h)
-		
+
 				node := config.GetNodebyHeight(h)
 				if node == nil {
 					res = types.RPCMethodNotFoundError(req.ID)
@@ -426,7 +415,7 @@ func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Reques
 				r.ContentLength = int64(len(body))
 				httpUtils.FowardRequest(w, r, node.RPC)
 				return
-			} 
+			}
 		default:
 			fmt.Println("Invalid method:", req.Method)
 			res = types.RPCInvalidRequestError(req.ID, types.RPCError{})
