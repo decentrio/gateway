@@ -4,7 +4,19 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 )
+
+// init http.Client reuse globally
+var httpClient = &http.Client{
+	Transport: &http.Transport{
+		MaxIdleConns:        200,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+	},
+	Timeout: 15 * time.Second,
+}
 
 func FowardRequest(w http.ResponseWriter, r *http.Request, destination string) {
 	target, err := url.Parse(destination)
@@ -39,7 +51,7 @@ func CheckRequest(r *http.Request, node string) (*http.Response, error) {
 
 	req.Header = r.Header.Clone()
 
-	res, err := http.DefaultClient.Do(req)
+	res, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
