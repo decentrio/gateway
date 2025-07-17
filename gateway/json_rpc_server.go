@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/decentrio/gateway/config"
-	"github.com/decentrio/gateway/utils"
+	httpUtils "github.com/decentrio/gateway/utils"
 )
 
 // Error type
@@ -126,6 +126,16 @@ func trackRequestsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	select {
+	case semaphore <- struct{}{}:
+		defer func() { <-semaphore }()
+	case <-ctx.Done():
+		http.Error(w, "Server busy, please try again later", http.StatusTooManyRequests)
+		return
+	}
 	var req JSONRPCRequest
 	var res JSONRPCResponse
 	if r.Method != http.MethodPost {

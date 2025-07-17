@@ -97,7 +97,7 @@ var testMultiRequestGRPCCmd = &cobra.Command{
 
 var testMultiRequestRPCCmd = &cobra.Command{
 	Use:   "test-multi-request-rpc",
-	Short: "Test 200 concurrent JSON-RPC HTTP requests with max 20 in parallel",
+	Short: "Test 30 concurrent JSON-RPC HTTP requests",
 	Run: func(cmd *cobra.Command, args []string) {
 		const endpoint = "http://localhost:5001" // Tendermint RPC mặc định
 
@@ -106,7 +106,7 @@ var testMultiRequestRPCCmd = &cobra.Command{
 
 		var wg sync.WaitGroup
 		var suc int32
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 30; i++ {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/decentrio/gateway/config"
-	"github.com/decentrio/gateway/utils"
+	httpUtils "github.com/decentrio/gateway/utils"
 )
 
 var (
@@ -75,6 +75,16 @@ func Shutdown_API_Server(server *Server) {
 }
 
 func (server *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	select {
+	case semaphore <- struct{}{}:
+		defer func() { <-semaphore }()
+	case <-ctx.Done():
+		http.Error(w, "Server busy, please try again later", http.StatusTooManyRequests)
+		return
+	}
 	atomic.AddInt32(&activeAPIRequestCount, 1)
 	wg.Add(1)
 	defer func() {

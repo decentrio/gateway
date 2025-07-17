@@ -5,14 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/cometbft/cometbft/rpc/jsonrpc/types"
-	"github.com/decentrio/gateway/config"
-	"github.com/decentrio/gateway/utils"
 	"io"
 	"net/http"
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"github.com/cometbft/cometbft/rpc/jsonrpc/types"
+	"github.com/decentrio/gateway/config"
+	httpUtils "github.com/decentrio/gateway/utils"
 )
 
 var (
@@ -87,6 +88,16 @@ func Shutdown_RPC_Server(server *Server) {
 }
 
 func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	select {
+	case semaphore <- struct{}{}:
+		defer func() { <-semaphore }()
+	case <-ctx.Done():
+		http.Error(w, "Server busy, please try again later", http.StatusTooManyRequests)
+		return
+	}
 	atomic.AddInt32(&activeRPCRequestCount, 1)
 	wg.Add(1)
 
@@ -247,6 +258,17 @@ func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleJSONRPCRequest(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	select {
+	case semaphore <- struct{}{}:
+		defer func() { <-semaphore }()
+	case <-ctx.Done():
+		http.Error(w, "Server busy, please try again later", http.StatusTooManyRequests)
+		return
+	}
+
 	var req = types.RPCRequest{}
 	var res = types.RPCResponse{}
 
