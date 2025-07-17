@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -104,7 +105,8 @@ var testMultiRequestRPCCmd = &cobra.Command{
 		// semaphore := make(chan struct{}, maxConcurrentRequests)
 
 		var wg sync.WaitGroup
-		for i := 0; i < 30; i++ {
+		var suc int32
+		for i := 0; i < 100; i++ {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
@@ -128,9 +130,11 @@ var testMultiRequestRPCCmd = &cobra.Command{
 				}
 
 				fmt.Printf("[RPC] Request %d response: %s\n\n", i, string(body))
+				atomic.AddInt32(&suc, 1)
 			}(i)
 		}
 		wg.Wait()
+		fmt.Printf("Total successful requests: %d\n", suc)
 	},
 }
 

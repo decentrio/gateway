@@ -1,6 +1,7 @@
 package httpUtils
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -27,12 +28,16 @@ var (
 )
 
 func FowardRequest(w http.ResponseWriter, r *http.Request, destination string) {
-	semaphore <- struct{}{}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
 
-	defer func() {
-		<-semaphore
-	}()
-
+	select {
+	case semaphore <- struct{}{}:
+		defer func() { <-semaphore }()
+	case <-ctx.Done():
+		http.Error(w, "Server busy, please try again later", http.StatusTooManyRequests)
+		return
+	}
 	target, err := url.Parse(destination)
 	if err != nil {
 		http.Error(w, "Invalid target", http.StatusInternalServerError)
