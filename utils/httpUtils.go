@@ -1,9 +1,11 @@
 package httpUtils
 
 import (
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"runtime"
 	"time"
 )
 
@@ -55,5 +57,6 @@ func CheckRequest(r *http.Request, node string) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Println("Active connections:", runtime.NumGoroutine())
 	return res, nil
 }
