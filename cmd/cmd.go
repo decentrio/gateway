@@ -1,12 +1,19 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"sync"
+	"time"
+
+	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
 
 	"github.com/decentrio/gateway/config"
 	"github.com/decentrio/gateway/gateway"
-	"github.com/spf13/cobra"
+
+	tmservice "github.com/cosmos/cosmos-sdk/client/grpc/tmservice"
 )
 
 var configFile string
@@ -49,9 +56,46 @@ var startCmd = &cobra.Command{
 	},
 }
 
+var testMultiRequestCmd = &cobra.Command{
+	Use:   "test-multi-request",
+	Short: "test multi-request",
+	Run: func(cmd *cobra.Command, args []string) {
+		conn, err := grpc.Dial("localhost:5002", grpc.WithInsecure())
+		if err != nil {
+			panic(err)
+		}
+		defer conn.Close()
+
+		client := tmservice.NewServiceClient(conn)
+
+		var wg sync.WaitGroup
+		for i := 0; i < 200; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+
+				// Giả sử block height là 12
+				res, err := client.GetBlockByHeight(ctx, &tmservice.GetBlockByHeightRequest{
+					Height: 12,
+				})
+				if err != nil {
+					fmt.Printf("Request %d error: %v\n", i, err)
+					return
+				}
+				fmt.Printf("Request %d block ID: %s\n", i, res.BlockId.String())
+			}(i)
+		}
+		wg.Wait()
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(testMultiRequestCmd)
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	startCmd.Flags().StringVarP(&configFile, "config", "c", "config.yaml", "Configuration file")
 }

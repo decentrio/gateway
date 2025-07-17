@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	mu sync.Mutex
-	wg sync.WaitGroup
+	mu        sync.Mutex
+	wg        sync.WaitGroup
+	semaphore = make(chan struct{}, 10)
 )
 
 type Server struct {

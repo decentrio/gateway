@@ -105,9 +105,11 @@ var requestInterceptor grpc.UnaryServerInterceptor = func(
 	info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler,
 ) (interface{}, error) {
+	semaphore <- struct{}{}
 	atomic.AddInt32(&activeGRPCRequestCount, 1)
 	wg.Add(1)
 	defer func() {
+		<-semaphore
 		wg.Done()
 		atomic.AddInt32(&activeGRPCRequestCount, -1)
 	}()

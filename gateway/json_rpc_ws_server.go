@@ -209,7 +209,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 			dialURL := strings.TrimPrefix(node.JSONRPC_WS, "ws://")
 			dialURL = strings.TrimPrefix(dialURL, "wss://")
-			hostPort := strings.Split(dialURL, "/")[0] 
+			hostPort := strings.Split(dialURL, "/")[0]
 
 			nodeConn, _, err := websocket.DefaultDialer.Dial("ws://"+hostPort, nil)
 			// nodeConn, _, err := websocket.DefaultDialer.Dial(node.JSONRPC_WS, nil)
@@ -226,7 +226,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Error forwarding message to node: %v", err)
 				continue
 			}
-			
+
 			_, response, err := nodeConn.ReadMessage()
 			if err != nil {
 				log.Printf("Error reading response from node: %v", err)
@@ -246,12 +246,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func checkRequestManuallyWebSocket(conn *websocket.Conn, request JSONRPCRequest) {
-	ETH_nodes := config.GetNodesByType("jsonrpc_ws") 
+	ETH_nodes := config.GetNodesByType("jsonrpc_ws")
 	var wg sync.WaitGroup
 	var bestNode atomic.Value
 	responseChan := make(chan map[string]interface{}, len(ETH_nodes))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	for _, url := range ETH_nodes {
