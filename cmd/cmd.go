@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -56,9 +58,9 @@ var startCmd = &cobra.Command{
 	},
 }
 
-var testMultiRequestCmd = &cobra.Command{
-	Use:   "test-multi-request",
-	Short: "test multi-request",
+var testMultiRequestGRPCCmd = &cobra.Command{
+	Use:   "test-multi-request-grpc",
+	Short: "test multi-request-grpc",
 	Run: func(cmd *cobra.Command, args []string) {
 		conn, err := grpc.Dial("localhost:5002", grpc.WithInsecure())
 		if err != nil {
@@ -92,10 +94,51 @@ var testMultiRequestCmd = &cobra.Command{
 	},
 }
 
+var testMultiRequestRPCCmd = &cobra.Command{
+	Use:   "test-multi-request-rpc",
+	Short: "Test 200 concurrent JSON-RPC HTTP requests with max 20 in parallel",
+	Run: func(cmd *cobra.Command, args []string) {
+		const endpoint = "http://localhost:5001" // Tendermint RPC mặc định
+
+		// const maxConcurrentRequests = 10
+		// semaphore := make(chan struct{}, maxConcurrentRequests)
+
+		var wg sync.WaitGroup
+		for i := 0; i < 30; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				// semaphore <- struct{}{}
+				// defer func() { <-semaphore }()
+
+				client := http.Client{Timeout: 60 * time.Second}
+				url := fmt.Sprintf("%s/block?height=%d", endpoint, 123)
+
+				resp, err := client.Get(url)
+				if err != nil {
+					fmt.Printf("[RPC] Request %d error: %v\n", i, err)
+					return
+				}
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					fmt.Printf("[RPC] Request %d read error: %v\n\n", i, err)
+					return
+				}
+
+				fmt.Printf("[RPC] Request %d response: %s\n\n", i, string(body))
+			}(i)
+		}
+		wg.Wait()
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(startCmd)
-	rootCmd.AddCommand(testMultiRequestCmd)
+	rootCmd.AddCommand(testMultiRequestGRPCCmd)
+	rootCmd.AddCommand(testMultiRequestRPCCmd)
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	startCmd.Flags().StringVarP(&configFile, "config", "c", "config.yaml", "Configuration file")
 }
