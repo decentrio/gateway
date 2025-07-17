@@ -74,12 +74,12 @@ var testMultiRequestCmd = &cobra.Command{
 			go func(i int) {
 				defer wg.Done()
 
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 				defer cancel()
 
-				// Giả sử block height là 12
+				// Giả sử block height là 123
 				res, err := client.GetBlockByHeight(ctx, &tmservice.GetBlockByHeightRequest{
-					Height: 12,
+					Height: 123,
 				})
 				if err != nil {
 					fmt.Printf("Request %d error: %v\n", i, err)

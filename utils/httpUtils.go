@@ -9,14 +9,15 @@ import (
 	"time"
 )
 
+var sharedTransport = &http.Transport{
+	MaxIdleConns: 200,
+	MaxIdleConnsPerHost: 100,
+	IdleConnTimeout: 90 * time.Second,
+	TLSHandshakeTimeout: 10 * time.Second,
+}
 // init http.Client reuse globally
 var httpClient = &http.Client{
-	Transport: &http.Transport{
-		MaxIdleConns:        200,
-		MaxIdleConnsPerHost: 100,
-		IdleConnTimeout:     90 * time.Second,
-		TLSHandshakeTimeout: 10 * time.Second,
-	},
+	Transport: sharedTransport,
 	Timeout: 15 * time.Second,
 }
 
@@ -27,7 +28,7 @@ func FowardRequest(w http.ResponseWriter, r *http.Request, destination string) {
 		return
 	}
 	proxy := httputil.NewSingleHostReverseProxy(target)
-
+	proxy.Transport = sharedTransport
 	proxy.Director = func(req *http.Request) {
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host
