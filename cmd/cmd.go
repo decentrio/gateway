@@ -71,6 +71,8 @@ var testMultiRequestGRPCCmd = &cobra.Command{
 
 		client := tmservice.NewServiceClient(conn)
 
+		var suc int32
+		start := time.Now()
 		var wg sync.WaitGroup
 		for i := 0; i < 200; i++ {
 			wg.Add(1)
@@ -89,9 +91,13 @@ var testMultiRequestGRPCCmd = &cobra.Command{
 					return
 				}
 				fmt.Printf("Request %d block ID: %s\n", i, res.BlockId.String())
+				atomic.AddInt32(&suc, 1)
 			}(i)
 		}
 		wg.Wait()
+		duration := time.Since(start)
+		fmt.Printf("Total successful requests: %d\n", suc)
+		fmt.Printf("Total execution time: %s\n", duration)
 	},
 }
 
@@ -106,6 +112,7 @@ var testMultiRequestRPCCmd = &cobra.Command{
 
 		var wg sync.WaitGroup
 		var suc int32
+		start := time.Now()
 		for i := 0; i < 30; i++ {
 			wg.Add(1)
 			go func(i int) {
@@ -134,7 +141,9 @@ var testMultiRequestRPCCmd = &cobra.Command{
 			}(i)
 		}
 		wg.Wait()
+		duration := time.Since(start)
 		fmt.Printf("Total successful requests: %d\n", suc)
+		fmt.Printf("Total execution time: %s\n", duration)
 	},
 }
 
