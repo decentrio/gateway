@@ -15,7 +15,7 @@ import (
 var (
 	mu        sync.Mutex
 	wg        sync.WaitGroup
-	semaphore = make(chan struct{}, 10)
+	semaphore = make(chan struct{}, 2000)
 )
 
 type Server struct {

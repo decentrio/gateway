@@ -1,32 +1,35 @@
 package httpUtils
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"runtime"
+	"sync"
 	"time"
 )
 
 var sharedTransport = &http.Transport{
-	MaxIdleConns:        200,
-	MaxIdleConnsPerHost: 100,
-	IdleConnTimeout:     90 * time.Second,
-	TLSHandshakeTimeout: 10 * time.Second,
+	MaxIdleConns:          2000,
+	MaxIdleConnsPerHost:   2000,
+	IdleConnTimeout:       60 * time.Second,
+	TLSHandshakeTimeout:   5 * time.Second,
+	ExpectContinueTimeout: 1 * time.Second,
+	ForceAttemptHTTP2:     true,
 }
 
 // init http.Client reuse globally
 var httpClient = &http.Client{
 	Transport: sharedTransport,
-	Timeout:   15 * time.Second,
+	Timeout:   0, // Không đặt timeout ở client nếu backend chậm
 }
 
-func FowardRequest(w http.ResponseWriter, r *http.Request, destination string) {
-	target, err := url.Parse(destination)
-	if err != nil {
-		http.Error(w, "Invalid target", http.StatusInternalServerError)
-		return
+var proxyCache = sync.Map{} // map[string]*httputil.ReverseProxy
+func getProxy(target *url.URL) *httputil.ReverseProxy {
+	key := target.Host
+	if p, ok := proxyCache.Load(key); ok {
+		return p.(*httputil.ReverseProxy)
 	}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.Transport = sharedTransport
@@ -35,11 +38,36 @@ func FowardRequest(w http.ResponseWriter, r *http.Request, destination string) {
 		req.URL.Host = target.Host
 		req.Host = target.Host
 	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
+		log.Printf("[proxy] error to %s: %v", target, err)
+		http.Error(w, "Upstream error", http.StatusBadGateway)
+	}
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		resp.Header.Set("Cache-Control", "public, max-age=10")
+		return nil
+	}
+	proxyCache.Store(key, proxy)
+	return proxy
+}
 
+func FowardRequest(w http.ResponseWriter, r *http.Request, destination string) {
+	_, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	target, err := url.Parse(destination)
+	if err != nil {
+		http.Error(w, "Invalid target", http.StatusInternalServerError)
+		return
+	}
+	proxy := getProxy(target)
 	proxy.ServeHTTP(w, r)
+
 }
 
 func CheckRequest(r *http.Request, node string) (*http.Response, error) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
 	new_target, err := url.Parse(node)
 	if err != nil {
 		return nil, err
@@ -48,7 +76,7 @@ func CheckRequest(r *http.Request, node string) (*http.Response, error) {
 	new_target.Path = r.URL.Path
 	new_target.RawQuery = r.URL.RawQuery
 
-	req, err := http.NewRequest(r.Method, new_target.String(), r.Body)
+	req, err := http.NewRequestWithContext(ctx, r.Method, new_target.String(), r.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -59,6 +87,5 @@ func CheckRequest(r *http.Request, node string) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Println("Active connections:", runtime.NumGoroutine())
 	return res, nil
 }
