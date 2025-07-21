@@ -88,7 +88,7 @@ func Shutdown_RPC_Server(server *Server) {
 }
 
 func (server *Server) handleRPCRequest(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 1*time.Second)
 	defer cancel()
 
 	select {
