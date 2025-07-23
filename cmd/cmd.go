@@ -116,6 +116,7 @@ var testMultiRequestGRPCCmd = &cobra.Command{
 				}
 				fmt.Printf("Request %d block ID: %s\n", i, res.BlockId.String())
 				atomic.AddInt32(&suc, 1)
+				return
 			}(i)
 		}
 		wg.Wait()
@@ -125,26 +126,45 @@ var testMultiRequestGRPCCmd = &cobra.Command{
 }
 
 var testMultiRequestRPCCmd = &cobra.Command{
-	Use:   "test-multi-request-rpc",
-	Short: "Test 30 concurrent JSON-RPC HTTP requests",
+	Args:  cobra.ExactArgs(2),
+	Use:   "test-multi-request-rpc <num-req> <req-par>",
+	Short: "Send num-req RPC requests with max req-par goroutines in parallel",
 	Run: func(cmd *cobra.Command, args []string) {
-		const endpoint = "http://localhost:5001" // Tendermint RPC mặc định
+		numReq, err := strconv.Atoi(args[0])
+		if err != nil || numReq < 1 {
+			fmt.Printf("request: %s\n", args[0])
+			os.Exit(1)
+		}
+		reqPar, err := strconv.Atoi(args[1])
+		if err != nil || reqPar < 1 {
+			fmt.Printf("goroutine: %s\n", args[1])
+			os.Exit(1)
+		}
 
-		// const maxConcurrentRequests = 10
-		// semaphore := make(chan struct{}, maxConcurrentRequests)
+		cfg, err := config.LoadConfig(configFile)
+		if err != nil {
+			fmt.Printf("Error loading config file: %v\n", err)
+			os.Exit(1)
+		}
+		blocks := cfg.Upstream[len(cfg.Upstream)-1].Blocks
+		heightMax := blocks[len(blocks)-1]
 
+		const endpoint = "http://localhost:5001"
+
+		sem := make(chan struct{}, reqPar)
 		var wg sync.WaitGroup
 		var suc int32
 		start := time.Now()
-		for i := 0; i < 30; i++ {
+		for i := 0; i < numReq; i++ {
 			wg.Add(1)
+			sem <- struct{}{}
 			go func(i int) {
 				defer wg.Done()
-				// semaphore <- struct{}{}
-				// defer func() { <-semaphore }()
+				defer func() { <-sem }()
 
-				client := http.Client{Timeout: 60 * time.Second}
-				url := fmt.Sprintf("%s/block?height=%d", endpoint, 123)
+				randHeight := int64(rand.Uint64() % (heightMax + 1))
+				client := http.Client{Timeout: 5 * time.Second}
+				url := fmt.Sprintf("%s/block?height=%d", endpoint, randHeight)
 
 				resp, err := client.Get(url)
 				if err != nil {
@@ -161,6 +181,7 @@ var testMultiRequestRPCCmd = &cobra.Command{
 
 				fmt.Printf("[RPC] Request %d response: %s\n\n", i, string(body))
 				atomic.AddInt32(&suc, 1)
+				return
 			}(i)
 		}
 		wg.Wait()
