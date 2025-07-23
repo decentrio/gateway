@@ -116,7 +116,6 @@ var testMultiRequestGRPCCmd = &cobra.Command{
 				}
 				fmt.Printf("Request %d block ID: %s\n", i, res.BlockId.String())
 				atomic.AddInt32(&suc, 1)
-				return
 			}(i)
 		}
 		wg.Wait()
@@ -181,7 +180,6 @@ var testMultiRequestRPCCmd = &cobra.Command{
 
 				fmt.Printf("[RPC] Request %d response: %s\n\n", i, string(body))
 				atomic.AddInt32(&suc, 1)
-				return
 			}(i)
 		}
 		wg.Wait()
