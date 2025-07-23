@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -61,15 +62,26 @@ var startCmd = &cobra.Command{
 }
 
 var testMultiRequestGRPCCmd = &cobra.Command{
-	Use:   "test-multi-request-grpc",
-	Short: "test-multi-request-grpc will send 8000 requests (with different heights) to nodes, 100 requests each time in parallel",
+	Args:  cobra.ExactArgs(2),
+	Use:   "test-multi-request-grpc <num-req> <req-par>",
+	Short: "Send num-req gRPC requests with max req-par goroutines in parallel",
 	Run: func(cmd *cobra.Command, args []string) {
+		numReq, err := strconv.Atoi(args[0])
+		if err != nil || numReq < 1 {
+			fmt.Printf("request: %s\n", args[0])
+			os.Exit(1)
+		}
+		reqPar, err := strconv.Atoi(args[1])
+		if err != nil || reqPar < 1 {
+			fmt.Printf("goroutine: %s\n", args[1])
+			os.Exit(1)
+		}
+
 		cfg, err := config.LoadConfig(configFile)
 		if err != nil {
 			fmt.Printf("Error loading config file: %v\n", err)
 			os.Exit(1)
 		}
-
 		blocks := cfg.Upstream[len(cfg.Upstream)-1].Blocks
 		heightMax := blocks[len(blocks)-1]
 
@@ -78,27 +90,22 @@ var testMultiRequestGRPCCmd = &cobra.Command{
 			panic(err)
 		}
 		defer conn.Close()
-
 		client := tmservice.NewServiceClient(conn)
 
 		var suc int32
 		start := time.Now()
-		const maxConcurrency = 100
 
-		sem := make(chan struct{}, maxConcurrency)
+		sem := make(chan struct{}, reqPar)
 		var wg sync.WaitGroup
 
-		for i := 0; i < 8000; i++ {
+		for i := 0; i < numReq; i++ {
 			wg.Add(1)
-			sem <- struct{}{} // chiếm 1 slot
-
+			sem <- struct{}{}
 			go func(i int) {
 				defer wg.Done()
-				defer func() { <-sem }() // giải phóng slot khi xong
-
+				defer func() { <-sem }()
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-
 				randHeight := int64(rand.Uint64() % (heightMax + 1))
 				res, err := client.GetBlockByHeight(ctx, &tmservice.GetBlockByHeightRequest{
 					Height: randHeight,
@@ -111,11 +118,9 @@ var testMultiRequestGRPCCmd = &cobra.Command{
 				atomic.AddInt32(&suc, 1)
 			}(i)
 		}
-
 		wg.Wait()
-		duration := time.Since(start)
 		fmt.Printf("Total successful requests: %d\n", suc)
-		fmt.Printf("Total execution time: %s\n", duration)
+		fmt.Printf("Total execution time: %s\n", time.Since(start))
 	},
 }
 
