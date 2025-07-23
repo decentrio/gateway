@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"sync"
@@ -61,8 +62,17 @@ var startCmd = &cobra.Command{
 
 var testMultiRequestGRPCCmd = &cobra.Command{
 	Use:   "test-multi-request-grpc",
-	Short: "test multi-request-grpc",
+	Short: "test-multi-request-grpc will send 8000 requests (with different heights) to nodes, 100 requests each time in parallel",
 	Run: func(cmd *cobra.Command, args []string) {
+		cfg, err := config.LoadConfig(configFile)
+		if err != nil {
+			fmt.Printf("Error loading config file: %v\n", err)
+			os.Exit(1)
+		}
+
+		blocks := cfg.Upstream[len(cfg.Upstream)-1].Blocks
+		heightMax := blocks[len(blocks)-1]
+
 		conn, err := grpc.Dial("localhost:5002", grpc.WithInsecure())
 		if err != nil {
 			panic(err)
@@ -73,18 +83,25 @@ var testMultiRequestGRPCCmd = &cobra.Command{
 
 		var suc int32
 		start := time.Now()
+		const maxConcurrency = 100
+
+		sem := make(chan struct{}, maxConcurrency)
 		var wg sync.WaitGroup
-		for i := 0; i < 200; i++ {
+
+		for i := 0; i < 8000; i++ {
 			wg.Add(1)
+			sem <- struct{}{} // chiếm 1 slot
+
 			go func(i int) {
 				defer wg.Done()
+				defer func() { <-sem }() // giải phóng slot khi xong
 
-				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 
-				// Giả sử block height là 123
+				randHeight := int64(rand.Uint64() % (heightMax + 1))
 				res, err := client.GetBlockByHeight(ctx, &tmservice.GetBlockByHeightRequest{
-					Height: 123,
+					Height: randHeight,
 				})
 				if err != nil {
 					fmt.Printf("Request %d error: %v\n", i, err)
@@ -94,6 +111,7 @@ var testMultiRequestGRPCCmd = &cobra.Command{
 				atomic.AddInt32(&suc, 1)
 			}(i)
 		}
+
 		wg.Wait()
 		duration := time.Since(start)
 		fmt.Printf("Total successful requests: %d\n", suc)
