@@ -114,7 +114,9 @@ func (server *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {
 			path_with_height_params := []string{"block", "blocks", "validatorsets", "historical_info"}
 			if len(pathSegments) > 0 {
 				height_params := pathSegments[len(pathSegments)-1]
-				if slices.Contains(path_with_height_params, pathSegments[len(pathSegments)-2]) {
+				if strings.Contains(height_params, "latest") {
+					height = 0
+				} else if slices.Contains(path_with_height_params, pathSegments[len(pathSegments)-2]) {
 					height, err = strconv.ParseUint(height_params, 10, 64)
 					if err != nil {
 						http.Error(w, fmt.Sprintf("{\"code\":3,\"message\":\"type mismatch, parameter: height, error: strconv.ParseInt: parsing \\\"%s\\\": invalid syntax\",\"details\":[]}", height_params), http.StatusBadRequest)
