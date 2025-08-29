@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -122,6 +123,8 @@ func (server *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {
 						http.Error(w, fmt.Sprintf("{\"code\":3,\"message\":\"type mismatch, parameter: height, error: strconv.ParseInt: parsing \\\"%s\\\": invalid syntax\",\"details\":[]}", height_params), http.StatusBadRequest)
 						return
 					}
+				} else if h, err := GetHeightFromURL(r.URL.String()); err == nil {
+					height, _ = strconv.ParseUint(h, 10, 64)
 				}
 			}
 		}
@@ -135,4 +138,24 @@ func (server *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Node called: ", node.API)
 	}
 	httpUtils.FowardRequest(w, r, node.API)
+}
+
+func GetHeightFromURL(rawURL string) (string, error) {
+	// parse url
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+
+	q := u.Query().Get("query")
+	if q == "" {
+		return "", fmt.Errorf("query parameter not found")
+	}
+
+	const prefix = "tx.height="
+	if strings.HasPrefix(q, prefix) {
+		return strings.TrimPrefix(q, prefix), nil
+	}
+
+	return "", fmt.Errorf("tx.height not found in query param")
 }
