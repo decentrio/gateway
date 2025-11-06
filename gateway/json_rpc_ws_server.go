@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -128,6 +129,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	for {
+		node = nil
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure, 1005) {
@@ -178,6 +180,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err != nil {
+			if errors.Is(err, errBlockHashSelector) {
+				checkRequestManuallyWebSocket(conn, req)
+				continue
+			}
 			respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":"%s","id":%d}`, err.Error(), req.ID)
 			conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
 			continue
