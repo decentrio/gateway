@@ -2,6 +2,7 @@ package httpUtils
 
 import (
 	"context"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -26,6 +27,17 @@ var httpClient = &http.Client{
 }
 
 var proxyCache = sync.Map{} // map[string]*httputil.ReverseProxy
+
+type cancelOnCloseReadCloser struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelOnCloseReadCloser) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
+}
 func getProxy(target *url.URL) *httputil.ReverseProxy {
 	key := target.Host
 	if p, ok := proxyCache.Load(key); ok {
@@ -66,10 +78,10 @@ func FowardRequest(w http.ResponseWriter, r *http.Request, destination string) {
 
 func CheckRequest(r *http.Request, node string) (*http.Response, error) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
 
 	new_target, err := url.Parse(node)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
@@ -78,6 +90,7 @@ func CheckRequest(r *http.Request, node string) (*http.Response, error) {
 
 	req, err := http.NewRequestWithContext(ctx, r.Method, new_target.String(), r.Body)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
@@ -85,7 +98,9 @@ func CheckRequest(r *http.Request, node string) (*http.Response, error) {
 
 	res, err := httpClient.Do(req)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
+	res.Body = &cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: cancel}
 	return res, nil
 }
