@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -47,6 +48,8 @@ var (
 	jsonRPCServers            = make(map[uint16]*http.Server)
 	activeJsonRPCRequestCount int32
 )
+
+var errBlockHashSelector = errors.New("block hash selector provided")
 
 func Start_JSON_RPC_Server(server *Server) {
 	fmt.Printf("Starting JSON-RPC server on port %d\n", server.Port)
@@ -202,6 +205,11 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		"eth_call":
 		height, err = getHeightFromParams(paramsMap, 1)
 		if err != nil {
+			if errors.Is(err, errBlockHashSelector) {
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				checkRequestManually(w, r)
+				return
+			}
 			res = JSONRPCResponse{
 				JSONRPC: "2.0",
 				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
@@ -213,6 +221,11 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	case "eth_getStorageAt": // param 2
 		height, err = getHeightFromParams(paramsMap, 2)
 		if err != nil {
+			if errors.Is(err, errBlockHashSelector) {
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				checkRequestManually(w, r)
+				return
+			}
 			res = JSONRPCResponse{
 				JSONRPC: "2.0",
 				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
@@ -227,6 +240,11 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		"eth_getUncleByBlockNumberAndIndex":
 		height, err = getHeightFromParams(paramsMap, 0)
 		if err != nil {
+			if errors.Is(err, errBlockHashSelector) {
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				checkRequestManually(w, r)
+				return
+			}
 			res = JSONRPCResponse{
 				JSONRPC: "2.0",
 				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
@@ -256,28 +274,72 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 }
 
 func getHeightFromParams(params []any, index int) (uint64, error) {
-	if len(params) > index {
-		height, found := params[index].(string)
-		if found {
-			if height == "latest" || height == "pending" {
-				return 0, nil
-			} else if height == "earliest" {
-				return 1, nil // temporary, should be earliest possible
-			} else if strings.HasPrefix(height, "0x") {
-				height = strings.TrimPrefix(height, "0x")
-				if h, err := strconv.ParseUint(height, 16, 64); err == nil {
-					return h, nil
-				} else {
-					return math.MaxUint64, fmt.Errorf("invalid height parameter: %w", err)
-				}
-			} else {
-				return math.MaxUint64, fmt.Errorf("invalid height parameter")
-			}
+	if len(params) <= index || params[index] == nil {
+		// Missing or null height selector defaults to latest.
+		return 0, nil
+	}
+
+	switch v := params[index].(type) {
+	case string:
+		return parseHeightSelector(v)
+	case map[string]any:
+		return parseHeightFromSelectorObject(v)
+	default:
+		return math.MaxUint64, fmt.Errorf("height not found")
+	}
+}
+
+func parseHeightSelector(value string) (uint64, error) {
+	switch value {
+	case "latest", "pending":
+		return 0, nil
+	case "earliest":
+		return 1, nil // temporary, should be earliest possible
+	}
+
+	if strings.HasPrefix(value, "0x") {
+		value = strings.TrimPrefix(value, "0x")
+		if h, err := strconv.ParseUint(value, 16, 64); err == nil {
+			return h, nil
 		} else {
-			return math.MaxUint64, fmt.Errorf("height not found")
+			return math.MaxUint64, fmt.Errorf("invalid height parameter: %w", err)
 		}
-	} else {
-		return math.MaxUint64, fmt.Errorf("invalid params")
+	}
+
+	if parsed, err := strconv.ParseUint(value, 10, 64); err == nil {
+		return parsed, nil
+	}
+
+	return math.MaxUint64, fmt.Errorf("invalid height parameter")
+}
+
+func parseHeightFromSelectorObject(selector map[string]any) (uint64, error) {
+	if blockNumber, ok := selector["blockNumber"]; ok {
+		return parseHeightFromAny(blockNumber)
+	}
+
+	if blockHash, ok := selector["blockHash"]; ok {
+		if _, ok := blockHash.(string); ok {
+			return 0, errBlockHashSelector
+		}
+		return math.MaxUint64, fmt.Errorf("invalid blockHash parameter")
+	}
+
+	if blockTag, ok := selector["blockTag"]; ok {
+		return parseHeightFromAny(blockTag)
+	}
+
+	return math.MaxUint64, fmt.Errorf("height not found")
+}
+
+func parseHeightFromAny(value any) (uint64, error) {
+	switch v := value.(type) {
+	case string:
+		return parseHeightSelector(v)
+	case float64:
+		return uint64(v), nil
+	default:
+		return math.MaxUint64, fmt.Errorf("invalid height parameter")
 	}
 }
 
