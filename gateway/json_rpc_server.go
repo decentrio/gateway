@@ -31,17 +31,17 @@ type JSONRPCError struct {
 // JSON-RPC request format
 type JSONRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      int             `json:"id"`
+	ID      json.RawMessage `json:"id,omitempty"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params"`
 }
 
 // JSON-RPC response format
 type JSONRPCResponse struct {
-	JSONRPC string        `json:"jsonrpc"`
-	ID      int           `json:"id"`
-	Result  any           `json:"result,omitempty"`
-	Error   *JSONRPCError `json:"error,omitempty"`
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id,omitempty"`
+	Result  any             `json:"result,omitempty"`
+	Error   *JSONRPCError   `json:"error,omitempty"`
 }
 
 var (
@@ -50,6 +50,30 @@ var (
 )
 
 var errBlockHashSelector = errors.New("block hash selector provided")
+var nullJSONRPCID = json.RawMessage("null")
+
+func cloneRawMessage(id json.RawMessage) json.RawMessage {
+	if id == nil {
+		return nil
+	}
+	cloned := make([]byte, len(id))
+	copy(cloned, id)
+	return cloned
+}
+
+func ensureResponseID(id json.RawMessage) json.RawMessage {
+	if len(id) == 0 {
+		return cloneRawMessage(nullJSONRPCID)
+	}
+	return cloneRawMessage(id)
+}
+
+func formatIDForLog(id json.RawMessage) string {
+	if len(id) == 0 {
+		return "null"
+	}
+	return string(id)
+}
 
 func Start_JSON_RPC_Server(server *Server) {
 	fmt.Printf("Starting JSON-RPC server on port %d\n", server.Port)
@@ -145,7 +169,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		res = JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Invalid request"},
-			ID:      1,
+			ID:      cloneRawMessage(nullJSONRPCID),
 		}
 		json.NewEncoder(w).Encode(res)
 		return
@@ -156,7 +180,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		res = JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Parse error. Invalid JSON: " + err.Error()},
-			ID:      1,
+			ID:      cloneRawMessage(nullJSONRPCID),
 		}
 		json.NewEncoder(w).Encode(res)
 		return
@@ -170,13 +194,12 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		res = JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Invalid JSON-RPC request: " + err.Error()},
-			ID:      -32700,
+			ID:      cloneRawMessage(nullJSONRPCID),
 		}
 		json.NewEncoder(w).Encode(res)
 		return
 	}
-
-	fmt.Printf("Received JSON-RPC request: Method=%s, Params=%v\n", req.Method, req.Params)
+	fmt.Printf("Received JSON-RPC request: Method=%s, ID=%s, Params=%s\n", req.Method, formatIDForLog(req.ID), string(req.Params))
 	paramsMap := make([]any, len(req.Params))
 	json.Unmarshal(req.Params, &paramsMap)
 	var height uint64 = math.MaxUint64
@@ -195,7 +218,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		res = JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Method not supported yet"},
-			ID:      1,
+			ID:      ensureResponseID(req.ID),
 		}
 		json.NewEncoder(w).Encode(res)
 		return
@@ -213,7 +236,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 			res = JSONRPCResponse{
 				JSONRPC: "2.0",
 				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
-				ID:      1,
+				ID:      ensureResponseID(req.ID),
 			}
 			json.NewEncoder(w).Encode(res)
 			return
@@ -229,7 +252,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 			res = JSONRPCResponse{
 				JSONRPC: "2.0",
 				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
-				ID:      1,
+				ID:      ensureResponseID(req.ID),
 			}
 			json.NewEncoder(w).Encode(res)
 			return
@@ -248,7 +271,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 			res = JSONRPCResponse{
 				JSONRPC: "2.0",
 				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
-				ID:      1,
+				ID:      ensureResponseID(req.ID),
 			}
 			json.NewEncoder(w).Encode(res)
 			return
@@ -263,7 +286,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		res = JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32602, Message: "No nodes found"},
-			ID:      1,
+			ID:      ensureResponseID(req.ID),
 		}
 
 		json.NewEncoder(w).Encode(res)
@@ -338,6 +361,8 @@ func parseHeightFromAny(value any) (uint64, error) {
 		return parseHeightSelector(v)
 	case float64:
 		return uint64(v), nil
+	case map[string]any:
+		return parseHeightFromSelectorObject(v)
 	default:
 		return math.MaxUint64, fmt.Errorf("invalid height parameter")
 	}
@@ -352,13 +377,14 @@ func checkRequestManually(w http.ResponseWriter, r *http.Request) {
 		msg = JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Parse error. Invalid JSON: " + err.Error()},
-			ID:      1,
+			ID:      cloneRawMessage(nullJSONRPCID),
 		}
 		json.NewEncoder(w).Encode(msg)
 		return
 	}
 
 	for _, url := range ETH_nodes {
+		msg = JSONRPCResponse{}
 		new_r := r.Clone(r.Context())
 		new_r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		res, err := httpUtils.CheckRequest(new_r, url)
@@ -374,7 +400,7 @@ func checkRequestManually(w http.ResponseWriter, r *http.Request) {
 				msg = JSONRPCResponse{
 					JSONRPC: "2.0",
 					Error:   &JSONRPCError{Code: -32600, Message: "Parse error. Invalid JSON: " + err.Error()},
-					ID:      1,
+					ID:      cloneRawMessage(nullJSONRPCID),
 				}
 				json.NewEncoder(w).Encode(msg)
 				return
@@ -384,6 +410,7 @@ func checkRequestManually(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if msg.Error != nil || msg.Result != nil {
+			msg.ID = ensureResponseID(msg.ID)
 			json.NewEncoder(w).Encode(msg)
 			return
 		} else if msg.Result == nil {
@@ -393,11 +420,11 @@ func checkRequestManually(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if msg.Result == nil {
-		nil_msg := map[string]interface{}{
-			"jsonrpc": msg.JSONRPC,
-			"id":      msg.ID,
-			"result":  msg.Result,
+		response := JSONRPCResponse{
+			JSONRPC: msg.JSONRPC,
+			ID:      ensureResponseID(msg.ID),
+			Result:  msg.Result,
 		}
-		json.NewEncoder(w).Encode(nil_msg)
+		json.NewEncoder(w).Encode(response)
 	}
 }
