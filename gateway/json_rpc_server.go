@@ -409,7 +409,7 @@ func checkRequestManually(w http.ResponseWriter, r *http.Request) {
 			json.Unmarshal(body, &msg)
 		}
 
-		if msg.Error == nil || msg.Result != nil {
+		if msg.Error == nil && msg.Result != nil {
 			msg.ID = ensureResponseID(msg.ID)
 			json.NewEncoder(w).Encode(msg)
 			return
