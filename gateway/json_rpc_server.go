@@ -279,8 +279,6 @@ func handleSingleRequest(w http.ResponseWriter, r *http.Request, body []byte) {
 }
 
 // processSingleJSONRPCRequest processes a single request and returns the response (for batch requests)
-
-// processSingleJSONRPCRequestOriginal handles a single request and writes directly to ResponseWriter (original logic)
 func processSingleJSONRPCRequest(w http.ResponseWriter, r *http.Request, req JSONRPCRequest, body []byte) {
 	fmt.Printf("Received JSON-RPC request: Method=%s, ID=%s, Params=%s\n", req.Method, formatIDForLog(req.ID), string(req.Params))
 	var paramsMap []any
@@ -382,6 +380,7 @@ func processSingleJSONRPCRequest(w http.ResponseWriter, r *http.Request, req JSO
 	httpUtils.FowardRequest(w, r, node.JSONRPC)
 }
 
+// processSingleJSONRPCRequestForBatchRequest processes a single request within a batch request
 func processSingleJSONRPCRequestForBatchRequest(r *http.Request, req JSONRPCRequest) JSONRPCResponse {
 	fmt.Printf("Received JSON-RPC request: Method=%s, ID=%s, Params=%s\n", req.Method, formatIDForLog(req.ID), string(req.Params))
 	var paramsMap []any
