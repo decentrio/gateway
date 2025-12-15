@@ -163,10 +163,9 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Server busy, please try again later", http.StatusTooManyRequests)
 		return
 	}
-	var req JSONRPCRequest
-	var res JSONRPCResponse
+
 	if r.Method != http.MethodPost {
-		res = JSONRPCResponse{
+		res := JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Invalid request"},
 			ID:      cloneRawMessage(nullJSONRPCID),
@@ -177,7 +176,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		res = JSONRPCResponse{
+		res := JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Parse error. Invalid JSON: " + err.Error()},
 			ID:      cloneRawMessage(nullJSONRPCID),
@@ -185,13 +184,83 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(res)
 		return
 	}
-	r.Body = io.NopCloser(bytes.NewReader(body))
-	r.Header.Set("Content-Type", "application/json")
-	r.ContentLength = int64(len(body))
 
-	err = json.Unmarshal(body, &req)
+	// Check if the request is a batch (array) or single request (object)
+	var firstChar byte
+	for i := range body {
+		if body[i] != ' ' && body[i] != '\t' && body[i] != '\n' && body[i] != '\r' {
+			firstChar = body[i]
+			break
+		}
+	}
+
+	// If it starts with '[', it's a batch request
+	if firstChar == '[' {
+		handleBatchRequest(w, r, body)
+		return
+	}
+
+	// Otherwise, it's a single request
+	handleSingleRequest(w, r, body)
+}
+
+func handleBatchRequest(w http.ResponseWriter, r *http.Request, body []byte) {
+	// Trim whitespace from body to ensure clean parsing
+	body = bytes.TrimSpace(body)
+
+	// Check for and replace smart quotes that might cause parsing issues
+	// Replace common smart quote characters with regular quotes
+	body = bytes.ReplaceAll(body, []byte("\u201C"), []byte("\"")) // Left double quotation mark
+	body = bytes.ReplaceAll(body, []byte("\u201D"), []byte("\"")) // Right double quotation mark
+	body = bytes.ReplaceAll(body, []byte("\u2018"), []byte("'"))  // Left single quotation mark
+	body = bytes.ReplaceAll(body, []byte("\u2019"), []byte("'"))  // Right single quotation mark
+
+	var requests []JSONRPCRequest
+	err := json.Unmarshal(body, &requests)
 	if err != nil {
-		res = JSONRPCResponse{
+		res := JSONRPCResponse{
+			JSONRPC: "2.0",
+			Error:   &JSONRPCError{Code: -32600, Message: "Invalid JSON-RPC batch request: " + err.Error()},
+			ID:      cloneRawMessage(nullJSONRPCID),
+		}
+		json.NewEncoder(w).Encode(res)
+		return
+	}
+
+	// Empty batch array - per JSON-RPC 2.0 spec, return empty array
+	if len(requests) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+		return
+	}
+
+	// Process each request in the batch
+	responses := make([]JSONRPCResponse, 0, len(requests))
+	for _, req := range requests {
+		res := processSingleJSONRPCRequestForBatchRequest(r, req)
+		// Only include responses for non-notification requests (those with an ID)
+		if len(req.ID) > 0 && string(req.ID) != "null" {
+			responses = append(responses, res)
+		}
+	}
+
+	// If all requests were notifications, return empty array
+	// Otherwise, return array of responses
+	if len(responses) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(responses)
+}
+
+func handleSingleRequest(w http.ResponseWriter, r *http.Request, body []byte) {
+	var req JSONRPCRequest
+	err := json.Unmarshal(body, &req)
+	if err != nil {
+		res := JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Invalid JSON-RPC request: " + err.Error()},
 			ID:      cloneRawMessage(nullJSONRPCID),
@@ -199,10 +268,25 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(res)
 		return
 	}
+
+	// Restore body for forwarding
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	r.ContentLength = int64(len(body))
+
+	// Use original single-request logic (forwards directly to ResponseWriter)
+	processSingleJSONRPCRequest(w, r, req, body)
+}
+
+// processSingleJSONRPCRequest processes a single request and returns the response (for batch requests)
+
+// processSingleJSONRPCRequestOriginal handles a single request and writes directly to ResponseWriter (original logic)
+func processSingleJSONRPCRequest(w http.ResponseWriter, r *http.Request, req JSONRPCRequest, body []byte) {
 	fmt.Printf("Received JSON-RPC request: Method=%s, ID=%s, Params=%s\n", req.Method, formatIDForLog(req.ID), string(req.Params))
-	paramsMap := make([]any, len(req.Params))
+	var paramsMap []any
 	json.Unmarshal(req.Params, &paramsMap)
 	var height uint64 = math.MaxUint64
+	var res JSONRPCResponse
 
 	switch req.Method {
 	case "eth_getTransactionByHash", // tx hash in params
@@ -226,6 +310,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		"eth_getTransactionCount",
 		"eth_getCode",
 		"eth_call":
+		var err error
 		height, err = getHeightFromParams(paramsMap, 1)
 		if err != nil {
 			if errors.Is(err, errBlockHashSelector) {
@@ -242,6 +327,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "eth_getStorageAt": // param 2
+		var err error
 		height, err = getHeightFromParams(paramsMap, 2)
 		if err != nil {
 			if errors.Is(err, errBlockHashSelector) {
@@ -261,6 +347,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		"eth_getBlockByNumber",
 		"eth_getTransactionByBlockNumberAndIndex",
 		"eth_getUncleByBlockNumberAndIndex":
+		var err error
 		height, err = getHeightFromParams(paramsMap, 0)
 		if err != nil {
 			if errors.Is(err, errBlockHashSelector) {
@@ -288,12 +375,184 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 			Error:   &JSONRPCError{Code: -32602, Message: "No nodes found"},
 			ID:      ensureResponseID(req.ID),
 		}
-
 		json.NewEncoder(w).Encode(res)
 		return
 	}
 	fmt.Println("Node called:", node.JSONRPC)
 	httpUtils.FowardRequest(w, r, node.JSONRPC)
+}
+
+func processSingleJSONRPCRequestForBatchRequest(r *http.Request, req JSONRPCRequest) JSONRPCResponse {
+	fmt.Printf("Received JSON-RPC request: Method=%s, ID=%s, Params=%s\n", req.Method, formatIDForLog(req.ID), string(req.Params))
+	var paramsMap []any
+	json.Unmarshal(req.Params, &paramsMap)
+	var height uint64 = math.MaxUint64
+	var err error
+
+	switch req.Method {
+	case "eth_getTransactionByHash", // tx hash in params
+		"eth_getTransactionReceipt",
+		"eth_getBlockByHash", // block hash in params
+		"eth_getBlockTransactionCountByHash",
+		"eth_getTransactionByBlockHashAndIndex",
+		"eth_getUncleByBlockHashAndIndex":
+		// For batch requests, we need to handle these differently
+		// Create a temporary response writer to capture the response
+		res := handleRequestWithManualCheck(r, req)
+		return res
+	case "eth_newFilter", /// ????
+		"eth_getLogs":
+		return JSONRPCResponse{
+			JSONRPC: "2.0",
+			Error:   &JSONRPCError{Code: -32600, Message: "Method not supported yet"},
+			ID:      ensureResponseID(req.ID),
+		}
+	case "eth_getBalance", // param 1
+		"eth_getTransactionCount",
+		"eth_getCode",
+		"eth_call":
+		height, err = getHeightFromParams(paramsMap, 1)
+		if err != nil {
+			if errors.Is(err, errBlockHashSelector) {
+				return handleRequestWithManualCheck(r, req)
+			}
+			return JSONRPCResponse{
+				JSONRPC: "2.0",
+				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
+				ID:      ensureResponseID(req.ID),
+			}
+		}
+	case "eth_getStorageAt": // param 2
+		height, err = getHeightFromParams(paramsMap, 2)
+		if err != nil {
+			if errors.Is(err, errBlockHashSelector) {
+				return handleRequestWithManualCheck(r, req)
+			}
+			return JSONRPCResponse{
+				JSONRPC: "2.0",
+				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
+				ID:      ensureResponseID(req.ID),
+			}
+		}
+	case "eth_getBlockTransactionCountByNumber", // param 0
+		"eth_getBlockByNumber",
+		"eth_getTransactionByBlockNumberAndIndex",
+		"eth_getUncleByBlockNumberAndIndex":
+		height, err = getHeightFromParams(paramsMap, 0)
+		if err != nil {
+			if errors.Is(err, errBlockHashSelector) {
+				return handleRequestWithManualCheck(r, req)
+			}
+			return JSONRPCResponse{
+				JSONRPC: "2.0",
+				Error:   &JSONRPCError{Code: -32600, Message: err.Error()},
+				ID:      ensureResponseID(req.ID),
+			}
+		}
+	default:
+		height = 0
+	}
+
+	fmt.Printf("Height: %d\n", height)
+	node := config.GetNodebyHeight(height)
+	if node == nil {
+		return JSONRPCResponse{
+			JSONRPC: "2.0",
+			Error:   &JSONRPCError{Code: -32602, Message: "No nodes found"},
+			ID:      ensureResponseID(req.ID),
+		}
+	}
+	fmt.Println("Node called:", node.JSONRPC)
+
+	// For batch requests, we need to capture the response
+	// Create a new request with just this single request
+	reqBody, _ := json.Marshal(req)
+	newReq := r.Clone(r.Context())
+	newReq.Body = io.NopCloser(bytes.NewReader(reqBody))
+	newReq.Header.Set("Content-Type", "application/json")
+	newReq.ContentLength = int64(len(reqBody))
+
+	// Forward the request and get the response
+	res, err := forwardRequestAndGetResponse(newReq, node.JSONRPC)
+	if err != nil {
+		return JSONRPCResponse{
+			JSONRPC: "2.0",
+			Error:   &JSONRPCError{Code: -32603, Message: "Internal error: " + err.Error()},
+			ID:      ensureResponseID(req.ID),
+		}
+	}
+
+	res.ID = ensureResponseID(req.ID)
+	return res
+}
+
+// forwardRequestAndGetResponse forwards a request and returns the JSON-RPC response
+func forwardRequestAndGetResponse(r *http.Request, destination string) (JSONRPCResponse, error) {
+	res, err := httpUtils.CheckRequest(r, destination)
+	if err != nil {
+		return JSONRPCResponse{}, err
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return JSONRPCResponse{}, err
+	}
+
+	var jsonRes JSONRPCResponse
+	if err := json.Unmarshal(body, &jsonRes); err != nil {
+		return JSONRPCResponse{}, err
+	}
+
+	return jsonRes, nil
+}
+
+func handleRequestWithManualCheck(r *http.Request, req JSONRPCRequest) JSONRPCResponse {
+	ETH_nodes := config.GetNodesByType("jsonrpc")
+	var msg JSONRPCResponse
+
+	// Create a request body with just this single request
+	reqBody, _ := json.Marshal(req)
+	newReq := r.Clone(r.Context())
+	newReq.Body = io.NopCloser(bytes.NewReader(reqBody))
+	newReq.Header.Set("Content-Type", "application/json")
+	newReq.ContentLength = int64(len(reqBody))
+
+	for _, url := range ETH_nodes {
+		msg = JSONRPCResponse{}
+		testReq := newReq.Clone(r.Context())
+		testReq.Body = io.NopCloser(bytes.NewReader(reqBody))
+		res, err := httpUtils.CheckRequest(testReq, url)
+		if err != nil || res == nil {
+			continue
+		}
+
+		fmt.Println("Node called:", url)
+		if res.Body != nil {
+			body, err := io.ReadAll(res.Body)
+			res.Body.Close()
+			if err != nil {
+				continue
+			}
+
+			json.Unmarshal(body, &msg)
+		}
+
+		if msg.Error == nil && msg.Result != nil {
+			msg.ID = ensureResponseID(req.ID)
+			return msg
+		} else if msg.Result == nil {
+			fmt.Println("Result is empty")
+			continue
+		}
+	}
+
+	// No successful response found
+	return JSONRPCResponse{
+		JSONRPC: "2.0",
+		Error:   &JSONRPCError{Code: -32603, Message: "Internal error"},
+		ID:      ensureResponseID(req.ID),
+	}
 }
 
 func getHeightFromParams(params []any, index int) (uint64, error) {
