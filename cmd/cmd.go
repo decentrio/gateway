@@ -21,7 +21,10 @@ import (
 	tmservice "github.com/cosmos/cosmos-sdk/client/grpc/tmservice"
 )
 
-var configFile string
+var (
+	configFile          string
+	enableBatchRequests bool
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "gateway",
@@ -51,6 +54,8 @@ var startCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("Starting gateway with config file: %s\n", configFile)
+		// Set batch request flag
+		gateway.SetEnableBatchRequests(enableBatchRequests)
 		gw, err := gateway.NewGateway(config.GetConfig())
 		if err != nil {
 			fmt.Printf("Error creating gateway: %v\n", err)
@@ -195,7 +200,10 @@ func init() {
 	rootCmd.AddCommand(testMultiRequestGRPCCmd)
 	rootCmd.AddCommand(testMultiRequestRPCCmd)
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
-	startCmd.Flags().StringVarP(&configFile, "config", "c", "config.yaml", "Configuration file")
+	// Make config flag available to all commands
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "config.yaml", "Configuration file")
+	// Add batch request flag to start command
+	startCmd.Flags().BoolVar(&enableBatchRequests, "enable-batch-requests", false, "Enable JSON-RPC batch request processing")
 }
 
 func Execute() {
