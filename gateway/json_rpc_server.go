@@ -47,6 +47,7 @@ type JSONRPCResponse struct {
 var (
 	jsonRPCServers            = make(map[uint16]*http.Server)
 	activeJsonRPCRequestCount int32
+	enableBatchRequests       bool // Flag to enable/disable batch request processing
 )
 
 var errBlockHashSelector = errors.New("block hash selector provided")
@@ -75,8 +76,18 @@ func formatIDForLog(id json.RawMessage) string {
 	return string(id)
 }
 
+// SetEnableBatchRequests sets whether batch requests should be enabled
+func SetEnableBatchRequests(enabled bool) {
+	enableBatchRequests = enabled
+}
+
 func Start_JSON_RPC_Server(server *Server) {
 	fmt.Printf("Starting JSON-RPC server on port %d\n", server.Port)
+	if enableBatchRequests {
+		fmt.Println("Batch requests are ENABLED")
+	} else {
+		fmt.Println("Batch requests are DISABLED")
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", trackRequestsMiddleware(handleJSONRPC))
@@ -195,7 +206,17 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If it starts with '[', it's a batch request
+	// Only process batch requests if enabled
 	if firstChar == '[' {
+		if !enableBatchRequests {
+			res := JSONRPCResponse{
+				JSONRPC: "2.0",
+				Error:   &JSONRPCError{Code: -32600, Message: "Batch requests are not enabled"},
+				ID:      cloneRawMessage(nullJSONRPCID),
+			}
+			json.NewEncoder(w).Encode(res)
+			return
+		}
 		handleBatchRequest(w, r, body)
 		return
 	}
