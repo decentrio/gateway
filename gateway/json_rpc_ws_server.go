@@ -130,6 +130,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		node = nil
+		var height uint64 = math.MaxUint64
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure, 1005) {
@@ -149,57 +150,87 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		fmt.Printf("Received JSON-RPC WS request: Method=%s, Params=%v, ID=%d\n", req.Method, req.Params, req.ID)
 
-		paramsMap := make([]any, len(req.Params))
-		json.Unmarshal(req.Params, &paramsMap)
-		var height uint64 = math.MaxUint64
+		// Special handling for eth_getLogs (single requests only)
+		if req.Method == "eth_getLogs" {
+			var paramsMap []any
+			json.Unmarshal(req.Params, &paramsMap)
+			height, heightErr := getHeightFromEthGetLogsFilter(paramsMap)
 
-		switch req.Method {
-		case "eth_getTransactionByHash", // tx hash in params
-			"eth_getTransactionReceipt",
-			"eth_getBlockByHash", // block hash in params
-			"eth_getBlockTransactionCountByHash",
-			"eth_getTransactionByBlockHashAndIndex",
-			"eth_getUncleByBlockHashAndIndex":
-			checkRequestManuallyWebSocket(conn, req)
-			continue
-
-		case "eth_newFilter", "eth_getLogs":
-			respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":"Method not supported yet","id":%d}`, req.ID)
-			conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
-			continue
-
-		case "eth_getBalance", "eth_getTransactionCount", "eth_getCode", "eth_call":
-			height, err = getHeightFromParams(paramsMap, 1)
-		case "eth_getStorageAt":
-			height, err = getHeightFromParams(paramsMap, 2)
-		case "eth_getBlockTransactionCountByNumber", "eth_getBlockByNumber",
-			"eth_getTransactionByBlockNumberAndIndex", "eth_getUncleByBlockNumberAndIndex":
-			height, err = getHeightFromParams(paramsMap, 0)
-		default:
-			height = 0
-		}
-
-		if err != nil {
-			if errors.Is(err, errBlockHashSelector) {
+			// If blockHash is present, use manual checking
+			if heightErr != nil && errors.Is(heightErr, errBlockHashSelector) {
 				checkRequestManuallyWebSocket(conn, req)
 				continue
 			}
-			respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":"%s","id":%d}`, err.Error(), req.ID)
-			conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
-			continue
-		}
-		if node == nil {
-			if defaultNode := config.GetNodebyHeight(0); defaultNode != nil {
-				node = defaultNode
-			}
-		}
 
-		if height > 0 {
-			node = config.GetNodebyHeight(height)
-			if node == nil {
-				respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":"Node not found","id":%d}`, req.ID)
+			// If there was an error parsing height, return error
+			if heightErr != nil {
+				respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":{"code":-32600,"message":"%s"},"id":%d}`, heightErr.Error(), req.ID)
 				conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
 				continue
+			}
+
+			// Route based on height
+			node = config.GetNodebyHeight(height)
+			if node == nil {
+				respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":{"code":-32602,"message":"No nodes found"},"id":%d}`, req.ID)
+				conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
+				continue
+			}
+			// Continue to forwarding logic below
+		} else {
+			paramsMap := make([]any, len(req.Params))
+			json.Unmarshal(req.Params, &paramsMap)
+			height = math.MaxUint64
+			var err error
+
+			switch req.Method {
+			case "eth_getTransactionByHash", // tx hash in params
+				"eth_getTransactionReceipt",
+				"eth_getBlockByHash", // block hash in params
+				"eth_getBlockTransactionCountByHash",
+				"eth_getTransactionByBlockHashAndIndex",
+				"eth_getUncleByBlockHashAndIndex":
+				checkRequestManuallyWebSocket(conn, req)
+				continue
+
+			case "eth_newFilter":
+				respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":{"code":-32600,"message":"Method not supported"},"id":%d}`, req.ID)
+				conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
+				continue
+
+			case "eth_getBalance", "eth_getTransactionCount", "eth_getCode", "eth_call":
+				height, err = getHeightFromParams(paramsMap, 1)
+			case "eth_getStorageAt":
+				height, err = getHeightFromParams(paramsMap, 2)
+			case "eth_getBlockTransactionCountByNumber", "eth_getBlockByNumber",
+				"eth_getTransactionByBlockNumberAndIndex", "eth_getUncleByBlockNumberAndIndex":
+				height, err = getHeightFromParams(paramsMap, 0)
+			default:
+				height = 0
+			}
+
+			if err != nil {
+				if errors.Is(err, errBlockHashSelector) {
+					checkRequestManuallyWebSocket(conn, req)
+					continue
+				}
+				respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":{"code":-32600,"message":"%s"},"id":%d}`, err.Error(), req.ID)
+				conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
+				continue
+			}
+			if node == nil {
+				if defaultNode := config.GetNodebyHeight(0); defaultNode != nil {
+					node = defaultNode
+				}
+			}
+
+			if height > 0 {
+				node = config.GetNodebyHeight(height)
+				if node == nil {
+					respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":{"code":-32602,"message":"Node not found"},"id":%d}`, req.ID)
+					conn.WriteMessage(websocket.TextMessage, []byte(respJSON))
+					continue
+				}
 			}
 		}
 		fmt.Printf("Height: %d\n", height)

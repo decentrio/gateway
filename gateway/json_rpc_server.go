@@ -403,7 +403,8 @@ func processSingleJSONRPCRequestCore(r *http.Request, req JSONRPCRequest, body [
 		"eth_getUncleByBlockHashAndIndex":
 		return handleRequestWithManualCheckCore(r, req)
 	case "eth_newFilter", /// ????
-		"eth_getLogs":
+		"eth_getLogs": // Note: eth_getLogs is handled specially in processSingleJSONRPCRequest for single requests only
+		// For batch requests, return not supported
 		return JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Method not supported"},
@@ -487,8 +488,87 @@ func processSingleJSONRPCRequestCore(r *http.Request, req JSONRPCRequest, body [
 	return res
 }
 
+// getHeightFromEthGetLogsFilter extracts height from eth_getLogs filter object
+// Returns (height, error). If blockHash is present, returns errBlockHashSelector.
+func getHeightFromEthGetLogsFilter(paramsMap []any) (uint64, error) {
+	if len(paramsMap) == 0 || paramsMap[0] == nil {
+		// No filter provided, default to latest
+		return 0, nil
+	}
+
+	filter, ok := paramsMap[0].(map[string]any)
+	if !ok {
+		return math.MaxUint64, fmt.Errorf("invalid filter parameter")
+	}
+
+	// If blockHash is present, use manual checking
+	if blockHash, ok := filter["blockHash"]; ok {
+		if _, ok := blockHash.(string); ok {
+			return 0, errBlockHashSelector
+		}
+		return math.MaxUint64, fmt.Errorf("invalid blockHash parameter")
+	}
+
+	// Try fromBlock first, then toBlock as fallback
+	if fromBlock, ok := filter["fromBlock"]; ok {
+		return parseHeightFromAny(fromBlock)
+	}
+
+	if toBlock, ok := filter["toBlock"]; ok {
+		return parseHeightFromAny(toBlock)
+	}
+
+	// No block info provided, default to latest
+	return 0, nil
+}
+
 // processSingleJSONRPCRequest processes a single request and writes the response to ResponseWriter
 func processSingleJSONRPCRequest(w http.ResponseWriter, r *http.Request, req JSONRPCRequest, body []byte) {
+	// Special handling for eth_getLogs (single requests only)
+	if req.Method == "eth_getLogs" {
+		var paramsMap []any
+		json.Unmarshal(req.Params, &paramsMap)
+		height, heightErr := getHeightFromEthGetLogsFilter(paramsMap)
+
+		// If blockHash is present, use manual checking
+		if heightErr != nil && errors.Is(heightErr, errBlockHashSelector) {
+			res := handleRequestWithManualCheckCore(r, req)
+			json.NewEncoder(w).Encode(res)
+			return
+		}
+
+		// If there was an error parsing height, return error
+		if heightErr != nil {
+			res := JSONRPCResponse{
+				JSONRPC: "2.0",
+				Error:   &JSONRPCError{Code: -32600, Message: heightErr.Error()},
+				ID:      ensureResponseID(req.ID),
+			}
+			json.NewEncoder(w).Encode(res)
+			return
+		}
+
+		// Route based on height
+		node := config.GetNodebyHeight(height)
+		if node != nil {
+			// Restore body for forwarding
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			r.Header.Set("Content-Type", "application/json")
+			r.ContentLength = int64(len(body))
+			httpUtils.FowardRequest(w, r, node.JSONRPC)
+			return
+		}
+
+		// No node found, return error
+		res := JSONRPCResponse{
+			JSONRPC: "2.0",
+			Error:   &JSONRPCError{Code: -32602, Message: "No nodes found"},
+			ID:      ensureResponseID(req.ID),
+		}
+		json.NewEncoder(w).Encode(res)
+		return
+	}
+
 	// Check if this is a hash-based method that needs manual checking
 	needsManualCheck := isHashBasedMethod(req.Method)
 
