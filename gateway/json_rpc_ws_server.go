@@ -150,6 +150,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		// Normalize jsonrpc version (default to "2.0" if missing)
 		normalizeJSONRPCVersion(&req)
+		// Normalize request ID if notifications are disabled
+		normalizeRequestID(&req)
 
 		fmt.Printf("Received JSON-RPC WS request: Method=%s, Params=%v, ID=%d\n", req.Method, req.Params, req.ID)
 

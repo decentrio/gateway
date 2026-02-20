@@ -22,8 +22,9 @@ import (
 )
 
 var (
-	configFile          string
-	enableBatchRequests bool
+	configFile           string
+	enableBatchRequests  bool
+	disableNotifications bool
 )
 
 var rootCmd = &cobra.Command{
@@ -56,6 +57,8 @@ var startCmd = &cobra.Command{
 		fmt.Printf("Starting gateway with config file: %s\n", configFile)
 		// Set batch request flag
 		gateway.SetEnableBatchRequests(enableBatchRequests)
+		// Set notification support flag
+		gateway.SetDisableNotifications(disableNotifications)
 		gw, err := gateway.NewGateway(config.GetConfig())
 		if err != nil {
 			fmt.Printf("Error creating gateway: %v\n", err)
@@ -204,6 +207,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "config.yaml", "Configuration file")
 	// Add batch request flag to start command
 	startCmd.Flags().BoolVar(&enableBatchRequests, "enable-batch-requests", false, "Enable JSON-RPC batch request processing")
+	// Add disable notifications flag to start command
+	startCmd.Flags().BoolVar(&disableNotifications, "disable-notifications", false, "Disable notification support: default missing 'id' to 1 (always send responses)")
 }
 
 func Execute() {

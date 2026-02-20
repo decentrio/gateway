@@ -48,6 +48,7 @@ var (
 	jsonRPCServers            = make(map[uint16]*http.Server)
 	activeJsonRPCRequestCount int32
 	enableBatchRequests       bool // Flag to enable/disable batch request processing
+	disableNotifications      bool // Flag to disable notification support (default missing id to 1)
 )
 
 var errBlockHashSelector = errors.New("block hash selector provided")
@@ -83,9 +84,23 @@ func normalizeJSONRPCVersion(req *JSONRPCRequest) {
 	}
 }
 
+// normalizeRequestID defaults id to "1" if it's missing and notifications are disabled
+func normalizeRequestID(req *JSONRPCRequest) {
+	if disableNotifications && len(req.ID) == 0 {
+		fmt.Println("Adding ID to notification request")
+		req.ID = json.RawMessage("1")
+	}
+}
+
 // SetEnableBatchRequests sets whether batch requests should be enabled
 func SetEnableBatchRequests(enabled bool) {
 	enableBatchRequests = enabled
+}
+
+// SetDisableNotifications sets whether notification support should be disabled
+// When disabled, requests without an 'id' field will default to id=1 and always receive a response
+func SetDisableNotifications(disabled bool) {
+	disableNotifications = disabled
 }
 
 func Start_JSON_RPC_Server(server *Server) {
@@ -94,6 +109,10 @@ func Start_JSON_RPC_Server(server *Server) {
 		fmt.Println("Batch requests are ENABLED")
 	} else {
 		fmt.Println("Batch requests are DISABLED")
+	}
+
+	if disableNotifications {
+		fmt.Println("Notifications are DISABLED, IDs will be set to 1")
 	}
 
 	mux := http.NewServeMux()
@@ -263,8 +282,10 @@ func handleBatchRequest(w http.ResponseWriter, r *http.Request, body []byte) {
 	}
 
 	// Normalize jsonrpc version for each request (default to "2.0" if missing)
+	// Also normalize request ID if notifications are disabled
 	for i := range requests {
 		normalizeJSONRPCVersion(&requests[i])
+		normalizeRequestID(&requests[i])
 	}
 
 	// Process each request in the batch
@@ -304,14 +325,28 @@ func handleSingleRequest(w http.ResponseWriter, r *http.Request, body []byte) {
 
 	// Normalize jsonrpc version (default to "2.0" if missing)
 	normalizeJSONRPCVersion(&req)
+	// Normalize request ID if notifications are disabled
+	normalizeRequestID(&req)
 
-	// Restore body for forwarding
-	r.Body = io.NopCloser(bytes.NewReader(body))
+	// Re-marshal the normalized request to ensure the body includes any normalized fields
+	normalizedBody, err := json.Marshal(req)
+	if err != nil {
+		res := JSONRPCResponse{
+			JSONRPC: "2.0",
+			Error:   &JSONRPCError{Code: -32600, Message: "Failed to marshal normalized request: " + err.Error()},
+			ID:      ensureResponseID(req.ID),
+		}
+		json.NewEncoder(w).Encode(res)
+		return
+	}
+
+	// Use normalized body for forwarding
+	r.Body = io.NopCloser(bytes.NewReader(normalizedBody))
 	r.Header.Set("Content-Type", "application/json")
-	r.ContentLength = int64(len(body))
+	r.ContentLength = int64(len(normalizedBody))
 
 	// Use original single-request logic (forwards directly to ResponseWriter)
-	processSingleJSONRPCRequest(w, r, req, body)
+	processSingleJSONRPCRequest(w, r, req, normalizedBody)
 }
 
 // isHashBasedMethod checks if a method requires hash-based manual checking
