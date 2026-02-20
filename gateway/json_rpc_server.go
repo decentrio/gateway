@@ -76,6 +76,13 @@ func formatIDForLog(id json.RawMessage) string {
 	return string(id)
 }
 
+// normalizeJSONRPCVersion defaults jsonrpc to "2.0" if it's missing or empty
+func normalizeJSONRPCVersion(req *JSONRPCRequest) {
+	if req.JSONRPC == "" {
+		req.JSONRPC = "2.0"
+	}
+}
+
 // SetEnableBatchRequests sets whether batch requests should be enabled
 func SetEnableBatchRequests(enabled bool) {
 	enableBatchRequests = enabled
@@ -255,6 +262,11 @@ func handleBatchRequest(w http.ResponseWriter, r *http.Request, body []byte) {
 		return
 	}
 
+	// Normalize jsonrpc version for each request (default to "2.0" if missing)
+	for i := range requests {
+		normalizeJSONRPCVersion(&requests[i])
+	}
+
 	// Process each request in the batch
 	responses := make([]JSONRPCResponse, 0, len(requests))
 	for _, req := range requests {
@@ -289,6 +301,9 @@ func handleSingleRequest(w http.ResponseWriter, r *http.Request, body []byte) {
 		json.NewEncoder(w).Encode(res)
 		return
 	}
+
+	// Normalize jsonrpc version (default to "2.0" if missing)
+	normalizeJSONRPCVersion(&req)
 
 	// Restore body for forwarding
 	r.Body = io.NopCloser(bytes.NewReader(body))

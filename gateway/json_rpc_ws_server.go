@@ -148,6 +148,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// Normalize jsonrpc version (default to "2.0" if missing)
+		normalizeJSONRPCVersion(&req)
+
 		fmt.Printf("Received JSON-RPC WS request: Method=%s, Params=%v, ID=%d\n", req.Method, req.Params, req.ID)
 
 		// Special handling for eth_getLogs (single requests only)
