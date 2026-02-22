@@ -375,6 +375,7 @@ func getHeightForMethod(method string, paramsMap []any) (uint64, error) {
 	case "eth_getStorageAt":
 		height, err = getHeightFromParams(paramsMap, 2)
 	case "eth_getBlockTransactionCountByNumber", "eth_getBlockByNumber",
+		"eth_getBlockReceipts",
 		"eth_getTransactionByBlockNumberAndIndex", "eth_getUncleByBlockNumberAndIndex":
 		height, err = getHeightFromParams(paramsMap, 0)
 	default:
@@ -489,6 +490,7 @@ func processSingleJSONRPCRequestCore(r *http.Request, req JSONRPCRequest, body [
 		}
 	case "eth_getBlockTransactionCountByNumber", // param 0
 		"eth_getBlockByNumber",
+		"eth_getBlockReceipts",
 		"eth_getTransactionByBlockNumberAndIndex",
 		"eth_getUncleByBlockNumberAndIndex":
 		height, err = getHeightFromParams(paramsMap, 0)

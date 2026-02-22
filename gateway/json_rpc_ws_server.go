@@ -208,6 +208,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			case "eth_getStorageAt":
 				height, err = getHeightFromParams(paramsMap, 2)
 			case "eth_getBlockTransactionCountByNumber", "eth_getBlockByNumber",
+				"eth_getBlockReceipts",
 				"eth_getTransactionByBlockNumberAndIndex", "eth_getUncleByBlockNumberAndIndex":
 				height, err = getHeightFromParams(paramsMap, 0)
 			default:
