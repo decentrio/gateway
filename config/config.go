@@ -24,9 +24,20 @@ type Ports struct {
 	JSONRPC_WS uint16 `yaml:"jsonrpc_ws"`
 }
 
+// MethodRoutingEntry defines how to route a JSON-RPC method (eth_*, debug_*, etc.).
+// Exactly one of HeightFromParam, HashBased, or NotSupported should be set for explicit routing.
+// Gated methods require the feature flag (--enable-debug for debug_* methods).
+type MethodRoutingEntry struct {
+	HeightFromParam *int  `yaml:"height_from_param"` // 0, 1, or 2 - block number/tag at this param index
+	HashBased       bool  `yaml:"hash_based"`        // try all nodes (block/tx hash in params)
+	NotSupported    bool  `yaml:"not_supported"`      // return "Method not supported"
+	Gated           bool  `yaml:"gated"`             // requires feature flag (e.g. for debug_ methods)
+}
+
 type Config struct {
-	Upstream []Node `yaml:"upstream"`
-	Ports    Ports  `yaml:"ports"`
+	Upstream      []Node                       `yaml:"upstream"`
+	Ports         Ports                        `yaml:"ports"`
+	MethodRouting map[string]MethodRoutingEntry `yaml:"method_routing"`
 }
 
 var DefaultConfig = Config{
@@ -51,8 +62,78 @@ var DefaultConfig = Config{
 
 var cfg *Config
 
+// defaultMethodRouting is used when config has no method_routing or method is not in config.
+// Param indices: 0 = block number in first param, 1 = second param (e.g. eth_call), 2 = third param (e.g. eth_getStorageAt).
+var defaultMethodRouting map[string]MethodRoutingEntry
+
+func init() {
+	param0 := 0
+	param1 := 1
+	param2 := 2
+	defaultMethodRouting = map[string]MethodRoutingEntry{
+		// height_from_param 1
+		"eth_getBalance":          {HeightFromParam: &param1},
+		"eth_getTransactionCount": {HeightFromParam: &param1},
+		"eth_getCode":             {HeightFromParam: &param1},
+		"eth_call":                {HeightFromParam: &param1},
+		// height_from_param 2
+		"eth_getStorageAt": {HeightFromParam: &param2},
+		// height_from_param 0
+		"eth_getBlockTransactionCountByNumber": {HeightFromParam: &param0},
+		"eth_getBlockByNumber":                 {HeightFromParam: &param0},
+		"eth_getBlockReceipts":                  {HeightFromParam: &param0},
+		"eth_getTransactionByBlockNumberAndIndex": {HeightFromParam: &param0},
+		"eth_getUncleByBlockNumberAndIndex":    {HeightFromParam: &param0},
+		// hash_based
+		"eth_getTransactionByHash":              {HashBased: true},
+		"eth_getTransactionReceipt":             {HashBased: true},
+		"eth_getBlockByHash":                    {HashBased: true},
+		"eth_getBlockTransactionCountByHash":    {HashBased: true},
+		"eth_getTransactionByBlockHashAndIndex": {HashBased: true},
+		"eth_getUncleByBlockHashAndIndex":       {HashBased: true},
+		// not_supported
+		"eth_newFilter": {NotSupported: true},
+		"eth_getLogs":   {NotSupported: true}, // single-request path uses custom filter logic in code
+		// debug_ (gated) - block number at param 0
+		"debug_traceBlockByNumber": {HeightFromParam: &param0, Gated: true},
+		"debug_getBlockRlp":        {HeightFromParam: &param0, Gated: true},
+		"debug_printBlock":         {HeightFromParam: &param0, Gated: true},
+		"debug_seedHash":           {HeightFromParam: &param0, Gated: true},
+		"debug_dumpBlock":          {HeightFromParam: &param0, Gated: true},
+		// debug_ - block number at param 1
+		"debug_traceCall": {HeightFromParam: &param1, Gated: true},
+		// debug_ - hash_based (block or tx hash in params)
+		"debug_traceBlockByHash":   {HashBased: true, Gated: true},
+		"debug_traceTransaction":  {HashBased: true, Gated: true},
+		"debug_storageRangeAt":    {HashBased: true, Gated: true},
+		"debug_accountRange":      {HashBased: true, Gated: true},
+		"debug_traceBadBlock":     {HashBased: true, Gated: true},
+		// debug_ - no block param (forward to default node)
+		"debug_metrics":   {Gated: true},
+		"debug_memStats":  {Gated: true},
+		"debug_gcStats":   {Gated: true},
+		"debug_cpuProfile": {Gated: true},
+	}
+}
+
+// GetMethodRouting returns the effective routing for a method (from config file, then built-in default).
+func GetMethodRouting(method string) MethodRoutingEntry {
+	if cfg != nil && cfg.MethodRouting != nil {
+		if e, ok := cfg.MethodRouting[method]; ok {
+			return e
+		}
+	}
+	// Fallback when config has no method_routing or method not in config (e.g. partial override).
+	if e, ok := defaultMethodRouting[method]; ok {
+		return e
+	}
+	return MethodRoutingEntry{}
+}
+
 func GenerateConfig() error {
-	data, err := yaml.Marshal(DefaultConfig)
+	cfg := DefaultConfig
+	cfg.MethodRouting = defaultMethodRouting
+	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal default config: %w", err)
 	}
@@ -74,9 +155,22 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	// If config has no method_routing, use built-in default so routing is read from config struct.
+	if config.MethodRouting == nil {
+		config.MethodRouting = defaultMethodRouting
+	}
+
 	for i, node := range config.Upstream {
 		if len(node.Blocks) > 2 {
 			return nil, fmt.Errorf("invalid blocks range for node %d", i+1)
+		}
+	}
+
+	if config.MethodRouting != nil {
+		for method, e := range config.MethodRouting {
+			if e.HeightFromParam != nil && (*e.HeightFromParam < 0 || *e.HeightFromParam > 2) {
+				return nil, fmt.Errorf("method_routing: %q height_from_param must be 0, 1, or 2", method)
+			}
 		}
 	}
 

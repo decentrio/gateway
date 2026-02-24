@@ -25,3 +25,41 @@ ports:
   api: 5004
   jsonrpc: 5005
   jsonrpc_ws: 5006
+
+# JSON-RPC method routing: height_from_param = block number at param index (0/1/2),
+# hash_based = try all nodes, not_supported = return error, gated = requires --enable-debug
+method_routing:
+  eth_getBalance:          { height_from_param: 1 }
+  eth_getTransactionCount: { height_from_param: 1 }
+  eth_getCode:             { height_from_param: 1 }
+  eth_call:                { height_from_param: 1 }
+  eth_getStorageAt:        { height_from_param: 2 }
+  eth_getBlockTransactionCountByNumber: { height_from_param: 0 }
+  eth_getBlockByNumber:    { height_from_param: 0 }
+  eth_getBlockReceipts:    { height_from_param: 0 }
+  eth_getTransactionByBlockNumberAndIndex: { height_from_param: 0 }
+  eth_getUncleByBlockNumberAndIndex: { height_from_param: 0 }
+  eth_getTransactionByHash:  { hash_based: true }
+  eth_getTransactionReceipt: { hash_based: true }
+  eth_getBlockByHash:        { hash_based: true }
+  eth_getBlockTransactionCountByHash: { hash_based: true }
+  eth_getTransactionByBlockHashAndIndex: { hash_based: true }
+  eth_getUncleByBlockHashAndIndex: { hash_based: true }
+  eth_newFilter: { not_supported: true }
+  eth_getLogs:   { not_supported: true }
+  # debug_ (gated = requires --enable-debug)
+  debug_traceBlockByNumber: { height_from_param: 0, gated: true }
+  debug_getBlockRlp:        { height_from_param: 0, gated: true }
+  debug_printBlock:         { height_from_param: 0, gated: true }
+  debug_seedHash:           { height_from_param: 0, gated: true }
+  debug_dumpBlock:          { height_from_param: 0, gated: true }
+  debug_traceCall:          { height_from_param: 1, gated: true }
+  debug_traceBlockByHash:   { hash_based: true, gated: true }
+  debug_traceTransaction:   { hash_based: true, gated: true }
+  debug_storageRangeAt:     { hash_based: true, gated: true }
+  debug_accountRange:       { hash_based: true, gated: true }
+  debug_traceBadBlock:      { hash_based: true, gated: true }
+  debug_metrics:   { gated: true }
+  debug_memStats:  { gated: true }
+  debug_gcStats:   { gated: true }
+  debug_cpuProfile: { gated: true }
