@@ -1,7 +1,9 @@
 package httpUtils
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -68,9 +70,10 @@ func FowardRequest(w http.ResponseWriter, r *http.Request, destination string) {
 // Archival/hash lookups can be slow; this should be long enough to read the full response.
 const UpstreamTimeout = 30 * time.Second
 
-// CheckRequest sends the request to the node using a detached context so the gateway
-// gets the full UpstreamTimeout per node. The client's disconnect/short timeout does not
-// cancel the upstream call; only UpstreamTimeout or node failure does.
+// CheckRequest sends the request to the node using a detached context and reads the
+// full response body before returning. This avoids "context canceled" when the caller
+// reads res.Body: we must not return until the body is read, because the request
+// context is canceled when this function returns (defer cancel()).
 func CheckRequest(r *http.Request, node string) (*http.Response, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), UpstreamTimeout)
 	defer cancel()
@@ -93,6 +96,17 @@ func CheckRequest(r *http.Request, node string) (*http.Response, error) {
 	res, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
+	}
+	// Read the full body while the request context is still valid. If we return
+	// before reading, defer cancel() runs and the caller's io.ReadAll(res.Body)
+	// would see "context canceled".
+	if res.Body != nil {
+		body, readErr := io.ReadAll(res.Body)
+		res.Body.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		res.Body = io.NopCloser(bytes.NewReader(body))
 	}
 	return res, nil
 }
