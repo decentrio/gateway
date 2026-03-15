@@ -64,8 +64,15 @@ func FowardRequest(w http.ResponseWriter, r *http.Request, destination string) {
 
 }
 
+// UpstreamTimeout is the time allowed for each upstream node request (gateway as client).
+// Archival/hash lookups can be slow; this should be long enough to read the full response.
+const UpstreamTimeout = 30 * time.Second
+
+// CheckRequest sends the request to the node using a detached context so the gateway
+// gets the full UpstreamTimeout per node. The client's disconnect/short timeout does not
+// cancel the upstream call; only UpstreamTimeout or node failure does.
 func CheckRequest(r *http.Request, node string) (*http.Response, error) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), UpstreamTimeout)
 	defer cancel()
 
 	new_target, err := url.Parse(node)
