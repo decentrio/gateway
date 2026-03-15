@@ -45,11 +45,11 @@ type JSONRPCResponse struct {
 }
 
 var (
-	jsonRPCServers                   = make(map[uint16]*http.Server)
-	activeJsonRPCRequestCount        int32
-	enableBatchRequests              bool // Flag to enable/disable batch request processing
-	disableNotifications             bool // Flag to disable notification support (default missing id to 1)
-	enableDebug    bool // Flag to enable debug_* methods (gated in config)
+	jsonRPCServers            = make(map[uint16]*http.Server)
+	activeJsonRPCRequestCount int32
+	enableBatchRequests       bool // Flag to enable/disable batch request processing
+	disableNotifications      bool // Flag to disable notification support (default missing id to 1)
+	enableDebug               bool // Flag to enable debug_* methods (gated in config)
 )
 
 var errBlockHashSelector = errors.New("block hash selector provided")
@@ -83,6 +83,24 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+// writeJSONRPCResponse sets Content-Type and encodes a single JSON-RPC response.
+func writeJSONRPCResponse(w http.ResponseWriter, res JSONRPCResponse) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
+}
+
+// writeJSONRPCResponses sets Content-Type and encodes a batch of JSON-RPC responses.
+func writeJSONRPCResponses(w http.ResponseWriter, responses []JSONRPCResponse) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(responses)
+}
+
+// writeJSONBytes sets Content-Type and writes raw JSON bytes (e.g. [] for empty batch).
+func writeJSONBytes(w http.ResponseWriter, body []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
 }
 
 // normalizeJSONRPCVersion defaults jsonrpc to "2.0" if it's missing or empty
@@ -221,23 +239,21 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method != http.MethodPost {
-		res := JSONRPCResponse{
+		writeJSONRPCResponse(w, JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Invalid request"},
 			ID:      cloneRawMessage(nullJSONRPCID),
-		}
-		json.NewEncoder(w).Encode(res)
+		})
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		res := JSONRPCResponse{
+		writeJSONRPCResponse(w, JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Parse error. Invalid JSON: " + err.Error()},
 			ID:      cloneRawMessage(nullJSONRPCID),
-		}
-		json.NewEncoder(w).Encode(res)
+		})
 		return
 	}
 
@@ -254,12 +270,11 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	// Only process batch requests if enabled
 	if firstChar == '[' {
 		if !enableBatchRequests {
-			res := JSONRPCResponse{
+			writeJSONRPCResponse(w, JSONRPCResponse{
 				JSONRPC: "2.0",
 				Error:   &JSONRPCError{Code: -32600, Message: "Batch requests are not enabled"},
 				ID:      cloneRawMessage(nullJSONRPCID),
-			}
-			json.NewEncoder(w).Encode(res)
+			})
 			return
 		}
 		handleBatchRequest(w, r, body)
@@ -284,19 +299,17 @@ func handleBatchRequest(w http.ResponseWriter, r *http.Request, body []byte) {
 	var requests []JSONRPCRequest
 	err := json.Unmarshal(body, &requests)
 	if err != nil {
-		res := JSONRPCResponse{
+		writeJSONRPCResponse(w, JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Invalid JSON-RPC batch request: " + err.Error()},
 			ID:      cloneRawMessage(nullJSONRPCID),
-		}
-		json.NewEncoder(w).Encode(res)
+		})
 		return
 	}
 
 	// Empty batch array - per JSON-RPC 2.0 spec, return empty array
 	if len(requests) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("[]"))
+		writeJSONBytes(w, []byte("[]"))
 		return
 	}
 
@@ -320,25 +333,22 @@ func handleBatchRequest(w http.ResponseWriter, r *http.Request, body []byte) {
 	// If all requests were notifications, return empty array
 	// Otherwise, return array of responses
 	if len(responses) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("[]"))
+		writeJSONBytes(w, []byte("[]"))
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(responses)
+	writeJSONRPCResponses(w, responses)
 }
 
 func handleSingleRequest(w http.ResponseWriter, r *http.Request, body []byte) {
 	var req JSONRPCRequest
 	err := json.Unmarshal(body, &req)
 	if err != nil {
-		res := JSONRPCResponse{
+		writeJSONRPCResponse(w, JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Invalid JSON-RPC request: " + err.Error()},
 			ID:      cloneRawMessage(nullJSONRPCID),
-		}
-		json.NewEncoder(w).Encode(res)
+		})
 		return
 	}
 
@@ -350,12 +360,11 @@ func handleSingleRequest(w http.ResponseWriter, r *http.Request, body []byte) {
 	// Re-marshal the normalized request to ensure the body includes any normalized fields
 	normalizedBody, err := json.Marshal(req)
 	if err != nil {
-		res := JSONRPCResponse{
+		writeJSONRPCResponse(w, JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Failed to marshal normalized request: " + err.Error()},
 			ID:      ensureResponseID(req.ID),
-		}
-		json.NewEncoder(w).Encode(res)
+		})
 		return
 	}
 
@@ -598,12 +607,11 @@ func processSingleJSONRPCRequest(w http.ResponseWriter, r *http.Request, req JSO
 		json.Unmarshal(req.Params, &paramsMap)
 		result := handleEthGetLogsRequest(req, paramsMap)
 		if result.NeedManualCheck {
-			res := handleRequestWithManualCheckCore(r, req)
-			json.NewEncoder(w).Encode(res)
+			writeJSONRPCResponse(w, handleRequestWithManualCheckCore(r, req))
 			return
 		}
 		if result.Response != nil {
-			json.NewEncoder(w).Encode(result.Response)
+			writeJSONRPCResponse(w, *result.Response)
 			return
 		}
 		if result.Node != nil {
@@ -626,8 +634,7 @@ func processSingleJSONRPCRequest(w http.ResponseWriter, r *http.Request, req JSO
 
 	// If it's a hash-based method or has a block hash selector error, use manual check
 	if needsManualCheck || (heightErr != nil && errors.Is(heightErr, errBlockHashSelector)) {
-		res := handleRequestWithManualCheckCore(r, req)
-		json.NewEncoder(w).Encode(res)
+		writeJSONRPCResponse(w, handleRequestWithManualCheckCore(r, req))
 		return
 	}
 
@@ -645,8 +652,7 @@ func processSingleJSONRPCRequest(w http.ResponseWriter, r *http.Request, req JSO
 	}
 
 	// Otherwise, use the core function
-	res := processSingleJSONRPCRequestCore(r, req, body)
-	json.NewEncoder(w).Encode(res)
+	writeJSONRPCResponse(w, processSingleJSONRPCRequestCore(r, req, body))
 }
 
 // processSingleJSONRPCRequestForBatchRequest processes a single request within a batch request
@@ -751,28 +757,25 @@ func parseHeightFromAny(value any) (uint64, error) {
 func checkRequestManually(w http.ResponseWriter, r *http.Request) {
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
-		msg := JSONRPCResponse{
+		writeJSONRPCResponse(w, JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Parse error. Invalid JSON: " + err.Error()},
 			ID:      cloneRawMessage(nullJSONRPCID),
-		}
-		json.NewEncoder(w).Encode(msg)
+		})
 		return
 	}
 
 	// Parse the request from the body
 	var req JSONRPCRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		msg := JSONRPCResponse{
+		writeJSONRPCResponse(w, JSONRPCResponse{
 			JSONRPC: "2.0",
 			Error:   &JSONRPCError{Code: -32600, Message: "Parse error. Invalid JSON: " + err.Error()},
 			ID:      cloneRawMessage(nullJSONRPCID),
-		}
-		json.NewEncoder(w).Encode(msg)
+		})
 		return
 	}
 
 	// Use the unified core function
-	res := handleRequestWithManualCheckCore(r, req)
-	json.NewEncoder(w).Encode(res)
+	writeJSONRPCResponse(w, handleRequestWithManualCheckCore(r, req))
 }
