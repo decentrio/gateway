@@ -78,6 +78,13 @@ func formatIDForLog(id json.RawMessage) string {
 	return string(id)
 }
 
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}
+
 // normalizeJSONRPCVersion defaults jsonrpc to "2.0" if it's missing or empty
 func normalizeJSONRPCVersion(req *JSONRPCRequest) {
 	if req.JSONRPC == "" {
@@ -399,27 +406,33 @@ func handleRequestWithManualCheckCore(r *http.Request, req JSONRPCRequest) JSONR
 		testReq.Body = io.NopCloser(bytes.NewReader(reqBody))
 		res, err := httpUtils.CheckRequest(testReq, url)
 		if err != nil || res == nil {
+			fmt.Printf("Node %s: request failed (err=%v, res=%v)\n", url, err, res != nil)
 			continue
 		}
 
 		fmt.Println("Node called:", url)
+		var body []byte
 		if res.Body != nil {
-			body, err := io.ReadAll(res.Body)
+			body, err = io.ReadAll(res.Body)
 			res.Body.Close()
 			if err != nil {
+				fmt.Printf("Node %s: failed to read body: %v\n", url, err)
 				continue
 			}
-
 			json.Unmarshal(body, &msg)
 		}
 
 		if msg.Error == nil && msg.Result != nil {
 			msg.ID = ensureResponseID(req.ID)
 			return msg
-		} else if msg.Result == nil {
-			fmt.Println("Result is empty")
-			continue
 		}
+		// Log why we're moving to the next node (result empty or error set)
+		if msg.Error != nil {
+			fmt.Printf("Node %s: JSON-RPC error: code=%d message=%s\n", url, msg.Error.Code, msg.Error.Message)
+		} else {
+			fmt.Printf("Node %s: result is empty. response body (first 500 chars): %s\n", url, truncate(string(body), 500))
+		}
+		continue
 	}
 
 	// No successful response found
