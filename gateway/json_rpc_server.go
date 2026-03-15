@@ -419,18 +419,20 @@ func handleRequestWithManualCheckCore(r *http.Request, req JSONRPCRequest) JSONR
 			continue
 		}
 
-		fmt.Println("Node called:", url)
 		var body []byte
 		if res.Body != nil {
 			body, err = io.ReadAll(res.Body)
 			res.Body.Close()
 			if err != nil {
-				fmt.Printf("Node %s: failed to read body: %v\n", url, err)
+				if errors.Is(err, context.Canceled) {
+					fmt.Printf("Node %s: response read failed (client disconnected or request canceled)\n", url)
+				} else {
+					fmt.Printf("Node %s: failed to read body: %v\n", url, err)
+				}
 				continue
 			}
 			json.Unmarshal(body, &msg)
 		}
-
 		if msg.Error == nil && msg.Result != nil {
 			msg.ID = ensureResponseID(req.ID)
 			return msg
