@@ -14,9 +14,11 @@ gateway start --config config.yaml
 # config.yaml
 
 #  block range will define type of nodes:
-#  - [1000]: Subnode with a range of latest 1000 blocks. This should be placed at the top for heighest priority over other nodes.
-#  - [1, 1000]: Subnode with specified block range
-#  - [1, 0]: Subnode with specified block range to the latest block (for querying without specifying block height)
+#  - [N]: Recent-window node for EVM JSON-RPC — routes height 0 (latest) and blocks within
+#         the last N blocks of chain tip (tip fetched via eth_blockNumber on this upstream).
+#         Should be placed at the top for highest priority over other nodes.
+#  - [x, y]: Subnode with specified static block range (y != 0)
+#  - [x, 0]: Subnode with specified block range from x through latest (static open range)
 
 #  List of sub nodes, with endpoints and port ranges.
 upstream:

@@ -500,7 +500,7 @@ func processSingleJSONRPCRequestCore(r *http.Request, req JSONRPCRequest, body [
 	}
 
 	fmt.Printf("Height: %d\n", height)
-	node := config.GetNodebyHeight(height)
+	node := config.GetJSONRPCNodeByHeight(height)
 	if node == nil {
 		return JSONRPCResponse{
 			JSONRPC: "2.0",
@@ -589,7 +589,7 @@ func handleEthGetLogsRequest(req JSONRPCRequest, paramsMap []any) ethGetLogsResu
 			},
 		}
 	}
-	node := config.GetNodebyHeight(height)
+	node := config.GetJSONRPCNodeByHeight(height)
 	if node == nil {
 		return ethGetLogsResult{
 			Response: &JSONRPCResponse{
@@ -642,7 +642,7 @@ func processSingleJSONRPCRequest(w http.ResponseWriter, r *http.Request, req JSO
 
 	// For height-based methods, try to forward directly if possible (performance optimization)
 	if heightErr == nil && height != math.MaxUint64 {
-		node := config.GetNodebyHeight(height)
+		node := config.GetJSONRPCNodeByHeight(height)
 		if node != nil {
 			// Restore body for forwarding
 			r.Body = io.NopCloser(bytes.NewReader(body))

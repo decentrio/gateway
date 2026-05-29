@@ -12,6 +12,20 @@ import (
 	"github.com/decentrio/gateway/config"
 )
 
+func initEVMTipCache(cfg *config.Config) {
+	config.SetEVMTipLookup(nil)
+	if cfg == nil {
+		return
+	}
+	recent := config.FirstRecentWindowNode()
+	if recent == nil || recent.JSONRPC == "" {
+		return
+	}
+	cache := NewEVMTipCache(recent.JSONRPC, defaultEVMTipCacheTTL)
+	config.SetEVMTipLookup(cache.Tip)
+	fmt.Printf("EVM recent-window tip cache: %s (window=%d blocks)\n", recent.JSONRPC, recent.Blocks[0])
+}
+
 var (
 	mu        sync.Mutex
 	wg        sync.WaitGroup
@@ -34,6 +48,7 @@ type Gateway struct {
 }
 
 func NewGateway(cfg *config.Config) (*Gateway, error) {
+	initEVMTipCache(cfg)
 	gw := &Gateway{}
 	gw.RPC_Server = NewServer(cfg, "rpc")
 	gw.GRPC_Server = NewServer(cfg, "grpc")

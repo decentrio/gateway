@@ -28,6 +28,9 @@ ports:
 
 # JSON-RPC method routing: height_from_param = block number at param index (0/1/2),
 # hash_based = try all nodes, not_supported = return error, gated = requires --enable-debug
+#
+# EVM JSON-RPC upstream selection uses blocks: [N] as a sliding recent window (last N blocks
+# from tip). Tip is cached via eth_blockNumber on the first [N] upstream's jsonrpc URL.
 method_routing:
   eth_getBalance:          { height_from_param: 1 }
   eth_getTransactionCount: { height_from_param: 1 }

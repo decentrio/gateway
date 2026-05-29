@@ -164,6 +164,9 @@ func LoadConfig(configPath string) (*Config, error) {
 		if len(node.Blocks) > 2 {
 			return nil, fmt.Errorf("invalid blocks range for node %d", i+1)
 		}
+		if len(node.Blocks) == 1 && node.Blocks[0] == 0 {
+			return nil, fmt.Errorf("invalid blocks for node %d: recent-window size must be > 0", i+1)
+		}
 	}
 
 	if config.MethodRouting != nil {

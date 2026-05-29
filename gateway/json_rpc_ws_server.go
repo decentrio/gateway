@@ -210,13 +210,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if node == nil {
-				if defaultNode := config.GetNodebyHeight(0); defaultNode != nil {
+				if defaultNode := config.GetJSONRPCNodeByHeight(0); defaultNode != nil {
 					node = defaultNode
 				}
 			}
 
 			if height > 0 {
-				node = config.GetNodebyHeight(height)
+				node = config.GetJSONRPCNodeByHeight(height)
 				if node == nil {
 					respJSON := fmt.Sprintf(`{"jsonrpc":"2.0","error":{"code":-32602,"message":"Node not found"},"id":%d}`, req.ID)
 					conn.WriteMessage(websocket.TextMessage, []byte(respJSON))

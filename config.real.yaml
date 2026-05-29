@@ -1,0 +1,49 @@
+upstream:
+  # - rpc: "https://sentry.tm.injective.network:443"
+  #   grpc: "sentry.chain.grpc.injective.network:443"
+  #   api: "https://sentry.lcd.injective.network:443"
+  #   jsonrpc: "https://sentry-lb.evm-rpc.injective.network"
+  #   jsonrpc_ws: "wss://sentry-lb.evm-ws.injective.network"
+  #   blocks: [1000]
+  
+  - rpc: "https://sentry.tm.injective.network:443"
+    grpc: "sentry.chain.grpc.injective.network:443"
+    api: "https://sentry.lcd.injective.network:443"
+    jsonrpc: "https://sentry-lb.evm-rpc.injective.network"
+    # jsonrpc_ws: "wss://sentry-lb.evm-ws.injective.network:443"
+    blocks: [1000]
+  
+  # - rpc: "https://sentry.tm.injective.network:443"
+  #   grpc: "sentry.chain.grpc.injective.network:443"
+  #   api: "https://sentry.lcd.injective.network:443"
+  #   jsonrpc: "https://evm.archival.chain.json-rpc.injective.network"
+  #   jsonrpc_ws: "ws://evm.archival.chain.ws.injective.network"
+  #   blocks: [1000]
+
+  - rpc: "http://37.27.58.188:26657"
+    grpc: "37.27.58.188:9900"
+    api: "http://37.27.58.188:10337"
+    jsonrpc: "http://37.27.58.188:8545"
+    jsonrpc_ws: "ws://37.27.58.188:8546"
+    blocks: [142284075,0]  
+
+  - rpc: "http://95.216.13.185:26657"
+    grpc: "95.216.13.185:9900"
+    api: "http://95.216.13.185:10337"
+    jsonrpc: "http://95.216.13.185:8545"
+    jsonrpc_ws: "ws://95.216.13.185:8546"
+    blocks: [139000000,142284075]
+
+  - rpc: "http://148.251.88.51:26657"
+    grpc: "148.251.88.51:9900"
+    api: "http://148.251.88.51:10337"
+    jsonrpc: "http://148.251.88.51:8545"
+    jsonrpc_ws: "ws://148.251.88.51:8546"
+    blocks: [119000000,141500000]
+
+ports:
+  rpc: 30000
+  api: 30001 
+  grpc: 30002
+  jsonrpc: 30003
+  jsonrpc_ws: 30004
