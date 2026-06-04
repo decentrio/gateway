@@ -42,25 +42,42 @@ func matchesRecentWindow(n *Node, height uint64, tip uint64, tipOK bool) bool {
 	if height == 0 {
 		return true
 	}
-	if !tipOK || height > tip {
+	if !tipOK {
 		return false
 	}
 	window := recentWindowSize(n)
+	// Cached tip can lag behind a block number the client just received from
+	// eth_blockNumber on the recent upstream. Allow heights up to window blocks
+	// above the cached tip so back-to-back calls stay on the recent node.
+	effectiveTip := tip
+	if height > tip && height-tip <= window {
+		effectiveTip = height
+	}
+	if height > effectiveTip {
+		return false
+	}
 	lowerBound := uint64(0)
-	if tip > window {
-		lowerBound = tip - window
+	if effectiveTip > window {
+		lowerBound = effectiveTip - window
 	}
 	return height >= lowerBound
 }
 
-func matchesStaticRange(n *Node, height uint64) bool {
+func matchesStaticRange(n *Node, height uint64, tip uint64, tipOK bool) bool {
 	if len(n.Blocks) != 2 || height == 0 {
 		return false
 	}
 	if n.Blocks[1] != 0 {
 		return height >= n.Blocks[0] && height <= n.Blocks[1]
 	}
-	return height >= n.Blocks[0]
+	if height < n.Blocks[0] {
+		return false
+	}
+	// Open range [x, 0] only covers blocks the upstream actually has.
+	if tipOK && height > tip {
+		return false
+	}
+	return true
 }
 
 func firstJSONRPCNodeMatching(match func(*Node) bool) *Node {
@@ -98,7 +115,7 @@ func GetJSONRPCNodeByHeight(height uint64) *Node {
 
 	if height > 0 {
 		if node := firstJSONRPCNodeMatching(func(n *Node) bool {
-			return matchesStaticRange(n, height)
+			return matchesStaticRange(n, height, tip, tipOK)
 		}); node != nil {
 			return node
 		}

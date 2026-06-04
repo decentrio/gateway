@@ -510,15 +510,8 @@ func processSingleJSONRPCRequestCore(r *http.Request, req JSONRPCRequest, body [
 	}
 	fmt.Println("Node called:", node.JSONRPC)
 
-	// Create a new request with just this single request
-	reqBody, _ := json.Marshal(req)
-	newReq := r.Clone(r.Context())
-	newReq.Body = io.NopCloser(bytes.NewReader(reqBody))
-	newReq.Header.Set("Content-Type", "application/json")
-	newReq.ContentLength = int64(len(reqBody))
-
 	// Forward the request and get the response
-	res, err := forwardRequestAndGetResponse(newReq, node.JSONRPC)
+	res, err := forwardJSONRPCWithBlockRetry(r, req, node.JSONRPC, routing.HeightFromParam, height)
 	if err != nil {
 		return JSONRPCResponse{
 			JSONRPC: "2.0",
@@ -644,11 +637,18 @@ func processSingleJSONRPCRequest(w http.ResponseWriter, r *http.Request, req JSO
 	if heightErr == nil && height != math.MaxUint64 {
 		node := config.GetJSONRPCNodeByHeight(height)
 		if node != nil {
-			// Restore body for forwarding
-			r.Body = io.NopCloser(bytes.NewReader(body))
-			r.Header.Set("Content-Type", "application/json")
-			r.ContentLength = int64(len(body))
-			httpUtils.FowardRequest(w, r, node.JSONRPC)
+			routing := config.GetMethodRouting(req.Method)
+			res, err := forwardJSONRPCWithBlockRetry(r, req, node.JSONRPC, routing.HeightFromParam, height)
+			if err != nil {
+				writeJSONRPCResponse(w, JSONRPCResponse{
+					JSONRPC: "2.0",
+					Error:   &JSONRPCError{Code: -32603, Message: "Internal error: " + err.Error()},
+					ID:      ensureResponseID(req.ID),
+				})
+				return
+			}
+			res.ID = ensureResponseID(req.ID)
+			writeJSONRPCResponse(w, res)
 			return
 		}
 	}

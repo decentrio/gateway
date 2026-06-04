@@ -51,6 +51,41 @@ func TestGetJSONRPCNodeByHeight_FallbackToRecentWindow(t *testing.T) {
 	require.Equal(t, "https://recent.example", GetJSONRPCNodeByHeight(99_000).JSONRPC)
 }
 
+func TestGetJSONRPCNodeByHeight_StaleTipRoutesToRecentWindow(t *testing.T) {
+	// Mirrors eth_blockNumber then eth_getBalance: client uses a block slightly
+	// ahead of the cached tip; must stay on the recent upstream, not open-range archival.
+	SetConfig(&Config{
+		Upstream: []Node{
+			{JSONRPC: "https://sentry-lb.evm-rpc.example", Blocks: []uint64{1000}},
+			{JSONRPC: "http://archival-tip.example", Blocks: []uint64{142_284_075, 0}},
+			{JSONRPC: "http://archival.example", Blocks: []uint64{119_000_000, 141_500_000}},
+		},
+	})
+	cachedTip := uint64(169_311_682)
+	requestedBlock := uint64(169_311_690)
+	SetEVMTipLookup(func() (uint64, bool) { return cachedTip, true })
+
+	node := GetJSONRPCNodeByHeight(requestedBlock)
+	require.NotNil(t, node)
+	require.Equal(t, "https://sentry-lb.evm-rpc.example", node.JSONRPC)
+}
+
+func TestGetJSONRPCNodeByHeight_OpenRangeDoesNotExceedTip(t *testing.T) {
+	SetConfig(&Config{
+		Upstream: []Node{
+			{JSONRPC: "https://recent.example", Blocks: []uint64{1000}},
+			{JSONRPC: "http://archival-tip.example", Blocks: []uint64{142_284_075, 0}},
+		},
+	})
+	SetEVMTipLookup(func() (uint64, bool) { return 169_311_682, true })
+
+	// Above cached tip — must not match open-range archival node.
+	require.Equal(t, "https://recent.example", GetJSONRPCNodeByHeight(169_311_690).JSONRPC)
+
+	// Below recent window but within open range and at/below tip — archival tip node.
+	require.Equal(t, "http://archival-tip.example", GetJSONRPCNodeByHeight(169_310_000).JSONRPC)
+}
+
 func TestLoadConfig_RejectsZeroRecentWindow(t *testing.T) {
 	data := []byte(`
 upstream:
